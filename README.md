@@ -38,6 +38,7 @@ sbx template load t3-sandbox-sbx.tar
 
 `sandbox.sh` wraps the sbx commands. It picks a free host port (from 3773), reuses it on restart,
 and prints a ready-to-use `Local URL` for pairing.
+If you get "permission denied", run `chmod +x sandbox.sh` once.
 
 ```bash
 ./sandbox.sh create myapp ~/code/myapp t3        # new sandbox; t3 is the default and can be left out
