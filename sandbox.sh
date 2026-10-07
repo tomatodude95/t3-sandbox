@@ -227,15 +227,17 @@ require_tty() {
   fi
 }
 
-# Fetches a URL from inside the sandbox and prints the HTTP status. Uses
-# curl if the sandbox has it, Node's fetch otherwise (always there).
+# Fetches a URL from inside the sandbox without following redirects and
+# prints "<status> <redirect target>". Uses curl if the sandbox has it,
+# Node's fetch otherwise (always there).
 sandbox_fetch() {
   # shellcheck disable=SC2016 # $1 is expanded by the sandbox's sh
   "$SBX_BIN" exec "$1" sh -c '
     if command -v curl >/dev/null 2>&1; then
-      curl -s -o /dev/null -w "%{http_code}" "$1"
+      curl -s -o /dev/null -w "%{http_code} %{redirect_url}" "$1"
     else
-      node -e "fetch(process.argv[1]).then(r => process.stdout.write(String(r.status)))" "$1"
+      node -e "fetch(process.argv[1], { redirect: \"manual\" }).then(r => process.stdout.write(
+        r.status + \" \" + new URL(r.headers.get(\"location\") || \"\", process.argv[1]).href))" "$1"
     fi' sh "$2" 2>/dev/null || true
 }
 
@@ -244,8 +246,10 @@ sandbox_fetch() {
 # the background, show its sign-in URL, let the user paste the callback URL
 # their browser failed to load, and replay that URL inside the sandbox.
 # A wrong or stale URL is rejected by Codex (HTTP 400) and can be retried.
+# After a successful sign-in Codex redirects to its own /success page and
+# only exits once that page is requested, so the script follows it.
 codex_login() {
-  local name="$1" out pid url callback status rc
+  local name="$1" out pid url callback status location rc
   out="$(mktemp "${TMPDIR:-/tmp}/sandbox-codex.XXXXXX")"
   "$SBX_BIN" exec "$name" codex login </dev/null >"$out" 2>&1 &
   pid=$!
@@ -285,10 +289,13 @@ codex_login() {
       echo "That isn't the localhost:1455/auth/callback URL. Try again (Ctrl+C to cancel)."
       continue
     fi
-    status="$(sandbox_fetch "$name" "$callback")"
+    read -r status location <<<"$(sandbox_fetch "$name" "$callback")"
     if [[ "$status" == "400" ]]; then
       echo "Codex rejected that URL (from an older attempt?). Paste the one from this sign-in."
       continue
+    fi
+    if [[ "$status" == 3* && "$location" =~ ^http://(localhost|127\.0\.0\.1):1455/ ]]; then
+      sandbox_fetch "$name" "$location" >/dev/null
     fi
     break
   done
