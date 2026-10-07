@@ -10,11 +10,11 @@ each CLI on your own machine.
 
 There are two ways to run a sandbox, both using the same image:
 [with sandbox.sh](#run-with-sandboxsh) (recommended) or [with sbx directly](#run-with-sbx-directly).
-It also runs with plain Docker, without sbx: see [docs/plain-docker.md](docs/plain-docker.md).
+It also runs as a plain Docker container, without sbx: see [docs/plain-docker.md](docs/plain-docker.md).
 
 ## Prerequisites
 
-- macOS 14+ or Ubuntu 24.04+\*
+- macOS 14+ (Apple silicon) or Ubuntu 24.04+\*
 - [sbx](https://docs.docker.com/ai/sandboxes/install/)
 - Docker (Desktop or Engine)
 - git
@@ -40,7 +40,7 @@ sbx template load t3-sandbox-sbx.tar
 and prints a ready-to-use `Local URL` for pairing.
 
 ```bash
-./sandbox.sh create myapp ~/code/myapp t3-code   # new sandbox; t3-code is the default and can be left out
+./sandbox.sh create myapp ~/code/myapp t3        # new sandbox; t3 is the default and can be left out
 ./sandbox.sh start myapp                         # start it again later
 ./sandbox.sh upgrade myapp                       # update T3 Code inside the sandbox
 ./sandbox.sh reload myapp                        # restart to pick up refreshed skills

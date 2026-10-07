@@ -141,17 +141,20 @@ Usage:
       Remove a sandbox (confirms, then 'sbx rm --force'). Not undoable.
       Aliases: remove, delete.
 
-  agent (optional, must be the LAST argument): t3-code, claude or opencode
-      Sandboxes are named '<agent>-<project>'. On create it picks the
-      agent (default: t3-code). Elsewhere it's inferred from the existing
-      sandbox and only needed when several agents share a project name.
+  agent (optional, must be the LAST argument): t3, claude or opencode
+      On create it picks the agent (default: t3). Elsewhere it's inferred
+      from the existing sandbox and only needed when several agents share
+      a project name.
 
-      t3-code   T3 Code's server from the sbx-custom-kit/ kit, port
-                auto-picked from ${T3_BASE_PORT}. Attaching shows its log
-                with the pairing token; a 'Local URL' line with
-                127.0.0.1:<port> is added after T3 Code's Pairing URL.
-      claude    Interactive Claude Code via 'sbx run'. No port.
-      opencode  'opencode serve', port auto-picked from ${BASE_PORT}.
+      t3        Sandbox 't3-code-<project>'. T3 Code's server from the
+                sbx-custom-kit/ kit, port auto-picked from ${T3_BASE_PORT}.
+                Attaching shows its log with the pairing token; a 'Local
+                URL' line with 127.0.0.1:<port> is added after T3 Code's
+                Pairing URL.
+      claude    Sandbox 'claude-<project>'. Interactive Claude Code via
+                'sbx run'. No port.
+      opencode  Sandbox 'opencode-<project>'. 'opencode serve', port
+                auto-picked from ${BASE_PORT}.
 
 Examples:
   $SCRIPT_NAME create webapp ~/code/webapp [3773]
@@ -207,6 +210,19 @@ find_free_port() {
   echo "$port"
 }
 
+# Rejects a host_port that isn't a number, e.g. a mistyped agent name.
+check_port() {
+  if [[ -n "$1" && ! "$1" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: host_port '$1' is not a number (agents: t3, claude, opencode)." >&2
+    exit 1
+  fi
+}
+
+# The command-line name of an agent: 't3' for t3-code, others unchanged.
+agent_arg() {
+  if [[ "$1" == "t3-code" ]]; then echo "t3"; else echo "$1"; fi
+}
+
 # Sets AGENT from whichever sandbox exists, unless an agent was passed
 # explicitly. Errors out if more than one variant exists and none was chosen.
 # Also accepts the full sandbox name (e.g. 't3-code-foo' for 'foo'): if that
@@ -230,8 +246,10 @@ resolve_agent() {
   sandbox_exists "t3-code-${project}" && found+=("t3-code")
 
   if [[ ${#found[@]} -gt 1 ]]; then
+    local args=() a
+    for a in "${found[@]}"; do args+=("$(agent_arg "$a")"); done
     echo "ERROR: multiple sandboxes exist for '${project}': ${found[*]}." >&2
-    echo "Add one of those as the last argument to disambiguate." >&2
+    echo "Add one of '${args[*]}' as the last argument to disambiguate." >&2
     exit 1
   elif [[ ${#found[@]} -eq 1 ]]; then
     AGENT="${found[0]}"
@@ -367,15 +385,17 @@ require_cmd "$SBX_BIN" SBX_BIN
 
 CMD="$1"; shift
 
-# Optional trailing agent name; t3-code is the default. Outside `create`
-# it's only needed for disambiguation, see resolve_agent.
+# Optional trailing agent argument (t3, claude, opencode); t3 (the t3-code
+# agent) is the default. Outside `create` it's only needed for
+# disambiguation, see resolve_agent.
 AGENT="t3-code"
 AGENT_EXPLICIT=0
 ARGS=("$@")
 if [[ ${#ARGS[@]} -gt 0 ]]; then
   LAST="${ARGS[$((${#ARGS[@]} - 1))]}"
-  if [[ "$LAST" == "t3-code" || "$LAST" == "claude" || "$LAST" == "opencode" ]]; then
+  if [[ "$LAST" == "t3" || "$LAST" == "claude" || "$LAST" == "opencode" ]]; then
     AGENT="$LAST"
+    [[ "$LAST" == "t3" ]] && AGENT="t3-code"
     AGENT_EXPLICIT=1
     unset 'ARGS[$((${#ARGS[@]} - 1))]'
   fi
@@ -395,12 +415,13 @@ case "$CMD" in
       [[ $# -ge 3 ]] && echo "NOTE: host_port '${3}' ignored in claude mode." >&2
     else
       HOST_PORT="${3:-}"
+      check_port "$HOST_PORT"
       IMAGE="$OPENCODE_IMAGE"
       [[ "$AGENT" == "t3-code" ]] && IMAGE=""
     fi
 
     if sandbox_exists "$NAME"; then
-      SUFFIX=""; [[ "$AGENT" != "t3-code" ]] && SUFFIX=" ${AGENT}"
+      SUFFIX=""; [[ "$AGENT" != "t3-code" ]] && SUFFIX=" $(agent_arg "$AGENT")"
       echo "ERROR: sandbox '${NAME}' already exists. Use '$SCRIPT_NAME start ${PROJECT_NAME}${SUFFIX}' instead." >&2
       exit 1
     fi
@@ -441,10 +462,11 @@ case "$CMD" in
       [[ $# -ge 2 ]] && echo "NOTE: host_port '${2}' ignored in claude mode." >&2
     else
       HOST_PORT="${2:-}"
+      check_port "$HOST_PORT"
     fi
 
     if ! sandbox_exists "$NAME"; then
-      SUFFIX=""; [[ "$AGENT_EXPLICIT" -eq 1 ]] && SUFFIX=" ${AGENT}"
+      SUFFIX=""; [[ "$AGENT_EXPLICIT" -eq 1 ]] && SUFFIX=" $(agent_arg "$AGENT")"
       echo "ERROR: sandbox '${NAME}' does not exist. Use '$SCRIPT_NAME create ${PROJECT_NAME} <workspace_path>${SUFFIX}' first." >&2
       exit 1
     fi
@@ -464,10 +486,11 @@ case "$CMD" in
       [[ $# -ge 2 ]] && echo "NOTE: host_port '${2}' ignored in claude mode." >&2
     else
       HOST_PORT="${2:-}"
+      check_port "$HOST_PORT"
     fi
 
     if ! sandbox_exists "$NAME"; then
-      SUFFIX=""; [[ "$AGENT_EXPLICIT" -eq 1 ]] && SUFFIX=" ${AGENT}"
+      SUFFIX=""; [[ "$AGENT_EXPLICIT" -eq 1 ]] && SUFFIX=" $(agent_arg "$AGENT")"
       echo "ERROR: sandbox '${NAME}' does not exist. Use '$SCRIPT_NAME create ${PROJECT_NAME} <workspace_path>${SUFFIX}' first." >&2
       exit 1
     fi
@@ -487,6 +510,7 @@ case "$CMD" in
     [[ $# -lt 1 ]] && usage
     PROJECT_NAME="$1"
     HOST_PORT="${2:-}"
+    check_port "$HOST_PORT"
     AGENT="t3-code"
     AGENT_EXPLICIT=1
     resolve_agent "$PROJECT_NAME"

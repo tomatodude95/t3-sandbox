@@ -2,9 +2,9 @@
 
 A wrapper around `sbx` that creates, starts and removes Docker Sandboxes for three agents:
 
-| Agent | Sandbox name | What runs | Port |
+| Agent argument | Sandbox name | What runs | Port |
 | --- | --- | --- | --- |
-| `t3-code` (default) | `t3-code-<project>` | `t3 serve` from the `sbx-custom-kit/` kit | published from `T3_BASE_PORT` (3773) |
+| `t3` (default) | `t3-code-<project>` | `t3 serve` from the `sbx-custom-kit/` kit | published from `T3_BASE_PORT` (3773) |
 | `claude` | `claude-<project>` | interactive Claude Code via `sbx run` | none |
 | `opencode` | `opencode-<project>` | `opencode serve` | published from `BASE_PORT` (8081) |
 
@@ -12,13 +12,13 @@ Every command runs in the foreground. The sandbox stops when the command exits.
 
 ## Requirements
 
-`bash`, `sbx` and `jq` on `PATH`. The `t3-code` agent also needs the `t3-sandbox-sbx` image loaded
+`bash`, `sbx` and `jq` on `PATH`. The `t3` agent also needs the `t3-sandbox-sbx` image loaded
 into sbx (see the README).
 
 ## Commands
 
-The agent (`t3-code`, `claude` or `opencode`) is an optional **last** argument. On `create` it
-defaults to `t3-code`. Other commands infer it from the existing sandbox and only need it when
+The agent (`t3`, `claude` or `opencode`) is an optional **last** argument. On `create` it
+defaults to `t3`. Other commands infer it from the existing sandbox and only need it when
 several agents share a project name. Commands that take a project name also accept the full sandbox name (`t3-code-myapp`).
 
 | Command | Does |
@@ -26,14 +26,14 @@ several agents share a project name. Commands that take a project name also acce
 | `create <project> <workspace> [port] [agent]` | Create and start a sandbox for `<workspace>` |
 | `start <project> [port]` | Start an existing sandbox |
 | `reload <project> [port] [agent]` | Stop (asks first), refresh the skills store, start again |
-| `upgrade <project> [port]` | `t3-code` only: update `t3` to the latest npm release, restart if it changed (asks first) |
+| `upgrade <project> [port]` | `t3` sandboxes only: update T3 Code to the latest npm release, restart if it changed (asks first) |
 | `ls [all]` | List sandboxes managed by this script (`all`: raw `sbx ls`) |
 | `rm <project> [agent]` | Remove a sandbox (asks first). Aliases: `remove`, `delete` |
 
 Without `[port]`, a port that sbx restored from an earlier run is reused. Otherwise the first
 free port from the base port up is used.
 
-For `t3-code`, the startup log shows T3 Code's Pairing URL with the sandbox's internal address.
+For `t3`, the startup log shows T3 Code's Pairing URL with the sandbox's internal address.
 The script adds a `Local URL: http://127.0.0.1:<port>/pair#token=…` line after it. Use that one.
 
 ```bash
@@ -58,10 +58,10 @@ keys are an error.
 | `SKILLS_DIR` | unset | Host folder mounted read-only into new sandboxes at its host path. Unset = no mount |
 | `SKILLS_IMPORT` | `1` if `SKILLS_DIR` is set, else `0` | Run `sbx skills import --force` before `create`/`start` |
 | `BASE_PORT` | `8081` | First host port tried for `opencode` (8080 is left free on purpose) |
-| `T3_BASE_PORT` | `3773` | First host port tried for `t3-code` |
+| `T3_BASE_PORT` | `3773` | First host port tried for `t3` |
 | `OPENCODE_IMAGE` | `opencode` | sbx agent used for `opencode` sandboxes |
 | `CLAUDE_IMAGE` | `claude` | sbx agent used for `claude` sandboxes |
-| `T3CODE_KIT` | `sbx-custom-kit/` next to the script | Kit used for `t3-code` sandboxes |
+| `T3CODE_KIT` | `sbx-custom-kit/` next to the script | Kit used for `t3` sandboxes |
 | `NETWORK_ALLOW` | unset | Comma-separated hosts allowed for each new sandbox (`sbx policy allow network --sandbox`). Applied on `create` only |
 
 `reload` always refreshes the skills store, whatever `SKILLS_IMPORT` says. To refresh the store
