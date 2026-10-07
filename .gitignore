@@ -1,0 +1,5 @@
+# Image export for `sbx template load` (docker image save ... -o *.tar)
+*.tar
+
+# Created by macOS Finder
+.DS_Store
