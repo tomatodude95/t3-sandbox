@@ -34,4 +34,4 @@ EXPOSE 3773
 # No ENTRYPOINT/CMD override: the base image's `tini --` / `bash` must stay
 # PID 1 so the container keeps running while sbx execs into it. sbx starts
 # entrypoint.sh itself as the sandbox's agent process, via `sandbox.entrypoint`
-# in sbx-custom-kit/spec.yaml.
+# in t3-kit/spec.yaml.

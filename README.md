@@ -61,7 +61,7 @@ Settings go in `~/.config/t3-sandbox/config.conf` (see `config.example.conf`). F
 ## Run with sbx directly
 
 ```bash
-sbx create --name t3-myapp --kit ./sbx-custom-kit/ t3 ~/code/myapp
+sbx create --name t3-myapp --kit ./t3-kit/ t3 ~/code/myapp
 sbx exec t3-myapp true                           # start it
 sbx ports t3-myapp --publish 3773:3773           # publish T3 Code's port on 127.0.0.1
 sbx run --name t3-myapp                          # attach to T3 Code's log

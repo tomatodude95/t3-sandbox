@@ -4,7 +4,7 @@ A wrapper around `sbx` that creates, starts and removes Docker Sandboxes for thr
 
 | Agent | Sandbox name | What runs | Port |
 | --- | --- | --- | --- |
-| `t3` (default) | `t3-<project>` | `t3 serve` from the `sbx-custom-kit/` kit | published from `T3_BASE_PORT` (3773) |
+| `t3` (default) | `t3-<project>` | `t3 serve` from the `t3-kit/` kit | published from `T3_BASE_PORT` (3773) |
 | `claude` | `claude-<project>` | interactive Claude Code via `sbx run` | none |
 | `opencode` | `opencode-<project>` | `opencode serve` | published from `BASE_PORT` (8081) |
 
@@ -61,7 +61,7 @@ keys are an error.
 | `T3_BASE_PORT` | `3773` | First host port tried for `t3` |
 | `OPENCODE_IMAGE` | `opencode` | sbx agent used for `opencode` sandboxes |
 | `CLAUDE_IMAGE` | `claude` | sbx agent used for `claude` sandboxes |
-| `T3_KIT` | `sbx-custom-kit/` next to the script | Kit used for `t3` sandboxes |
+| `T3_KIT` | `t3-kit/` next to the script | Kit used for `t3` sandboxes |
 | `NETWORK_ALLOW` | unset | Comma-separated hosts allowed for each new sandbox (`sbx policy allow network --sandbox`). Applied on `create` only |
 
 `reload` always refreshes the skills store, whatever `SKILLS_IMPORT` says. To refresh the store

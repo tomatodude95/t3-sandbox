@@ -32,6 +32,6 @@ sandbox (`sbx rm`) is removed.
 
 ## Outbound network (sbx)
 
-`sbx-custom-kit/spec.yaml` declares no network allowlist. What the sandbox can reach depends on
+`t3-kit/spec.yaml` declares no network allowlist. What the sandbox can reach depends on
 your sbx policy preset (`sbx policy ls`). Blocked requests show up in `sbx policy log`. Extra
 hosts for sandboxes created by `sandbox.sh` go in `NETWORK_ALLOW` (see [sandbox.md](sandbox.md)).

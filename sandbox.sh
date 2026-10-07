@@ -96,10 +96,10 @@ T3_BASE_PORT="${T3_BASE_PORT:-3773}"
 OPENCODE_IMAGE="${OPENCODE_IMAGE:-opencode}"
 CLAUDE_IMAGE="${CLAUDE_IMAGE:-claude}"
 
-# Path to the kind:sandbox kit (see sbx-custom-kit/spec.yaml) that launches
+# Path to the kind:sandbox kit (see t3-kit/spec.yaml) that launches
 # T3 Code's own server as the sandbox's agent process. Its `name:` field is
 # "t3", passed as the AGENT positional to `sbx create`/`sbx run`.
-T3_KIT="${T3_KIT:-$SCRIPT_DIR/sbx-custom-kit}"
+T3_KIT="${T3_KIT:-$SCRIPT_DIR/t3-kit}"
 
 # Optional comma-separated hosts allowed for every new sandbox
 # ('sbx policy allow network --sandbox <name> ...'). Empty = no extra rules.
@@ -147,7 +147,7 @@ Usage:
       a project name.
 
       t3        Sandbox 't3-<project>'. T3 Code's server from the
-                sbx-custom-kit/ kit, port auto-picked from ${T3_BASE_PORT}.
+                t3-kit/ kit, port auto-picked from ${T3_BASE_PORT}.
                 Attaching shows its log with the pairing token; a 'Local
                 URL' line with 127.0.0.1:<port> is added after T3 Code's
                 Pairing URL.
