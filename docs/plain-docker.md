@@ -15,13 +15,9 @@ docker run -d --name t3code -p 127.0.0.1:3773:3773 -v ~/code/myapp:/workspace t3
   network (see [security.md](security.md)).
 - `-e T3_HOST=… -e T3_PORT=…` change the bind address/port inside the container.
 
-## Provider login (once per container)
+## Provider login
 
-```bash
-docker exec -it t3code claude auth login
-docker exec -it t3code codex login
-docker exec -it t3code opencode auth login
-```
+See [providers.md](providers.md), e.g. `docker exec -it t3code claude auth login`.
 
 ## Pairing
 

@@ -27,7 +27,6 @@ project name. Commands that take a project name also accept the full sandbox nam
 | `start <project> [port]` | Start an existing sandbox |
 | `reload <project> [port] [agent]` | Stop (asks first), refresh the skills store, start again |
 | `upgrade <project> [port]` | `t3-code` only: update `t3` to the latest npm release, restart if it changed (asks first) |
-| `reload-skills` | Refresh the skills store only (`sbx skills import --force`) |
 | `ls [all]` | List sandboxes managed by this script (`all`: raw `sbx ls`) |
 | `rm <project> [agent]` | Remove a sandbox (asks first). Aliases: `remove`, `delete` |
 
@@ -45,8 +44,12 @@ sandbox.sh rm webapp
 
 ## Configuration
 
-Settings are read from `~/.config/t3-sandbox/config.sh` (a bash file, see
-[`config.example.sh`](../config.example.sh)). Environment variables of the same name override it.
+Settings are read from `~/.config/t3-sandbox/config.conf` (see
+[`config.example.conf`](../config.example.conf)). Environment variables of the same name override it.
+
+The file holds `KEY=value` lines. Lines starting with `#` are comments, quotes around a value are
+optional and a leading `~` means your home folder. The file is parsed, not executed, and unknown
+keys are an error.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -60,4 +63,6 @@ Settings are read from `~/.config/t3-sandbox/config.sh` (a bash file, see
 | `T3CODE_KIT` | `sbx-custom-kit/` next to the script | Kit used for `t3-code` sandboxes |
 | `NETWORK_ALLOW` | unset | Comma-separated hosts allowed for each new sandbox (`sbx policy allow network --sandbox`). Applied on `create` only |
 
-`reload` and `reload-skills` always refresh the skills store, whatever `SKILLS_IMPORT` says.
+`reload` always refreshes the skills store, whatever `SKILLS_IMPORT` says. To refresh the store
+without touching a sandbox, run `sbx skills import --force`. Running sandboxes pick it up on their
+next start.

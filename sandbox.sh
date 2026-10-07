@@ -11,18 +11,64 @@ SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 # Every setting below can be set in this config file (see
-# config.example.sh) or as an environment variable. The environment wins.
-CONFIG_FILE="$HOME/.config/t3-sandbox/config.sh"
+# config.example.conf) or as an environment variable. The environment wins.
+CONFIG_FILE="$HOME/.config/t3-sandbox/config.conf"
 CONFIG_VARS=(SBX_BIN SKILLS_DIR SKILLS_IMPORT BASE_PORT T3_BASE_PORT
   OPENCODE_IMAGE CLAUDE_IMAGE T3CODE_KIT NETWORK_ALLOW)
 
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+# Reads KEY=value lines from CONFIG_FILE. The file is parsed, never executed:
+# blank lines and lines starting with # are skipped, one pair of surrounding
+# quotes is stripped and a leading ~ expands to $HOME. Unknown keys are an
+# error. Keys already set in the environment are left alone.
+load_config() {
+  local line key value var known lineno=0 from_env=" "
+  for var in "${CONFIG_VARS[@]}"; do
+    [[ -n "${!var+x}" ]] && from_env+="${var} "
+  done
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    line="$(trim "${line%$'\r'}")"
+    [[ -z "$line" || "$line" == "#"* ]] && continue
+
+    if [[ "$line" != *=* ]]; then
+      echo "ERROR: ${CONFIG_FILE}:${lineno}: expected KEY=value." >&2
+      exit 1
+    fi
+    key="$(trim "${line%%=*}")"
+    value="$(trim "${line#*=}")"
+
+    known=0
+    for var in "${CONFIG_VARS[@]}"; do
+      [[ "$key" == "$var" ]] && known=1
+    done
+    if [[ "$known" -eq 0 ]]; then
+      echo "ERROR: ${CONFIG_FILE}:${lineno}: unknown setting '${key}'." >&2
+      exit 1
+    fi
+
+    if [[ ${#value} -ge 2 && ( ( "$value" == \"*\" ) || ( "$value" == \'*\' ) ) ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    # shellcheck disable=SC2088 # matching a literal ~ on purpose
+    if [[ "$value" == "~" || "$value" == "~/"* ]]; then
+      value="${HOME}${value:1}"
+    fi
+
+    [[ "$from_env" == *" ${key} "* ]] && continue
+    printf -v "$key" '%s' "$value"
+  done < "$CONFIG_FILE"
+}
+
 if [[ -f "$CONFIG_FILE" ]]; then
-  # Snapshot whatever the environment already sets, load the config, then
-  # restore the snapshot so environment variables override the config.
-  ENV_OVERRIDES="$(declare -p "${CONFIG_VARS[@]}" 2>/dev/null || true)"
-  # shellcheck source=/dev/null
-  source "$CONFIG_FILE"
-  eval "$ENV_OVERRIDES"
+  load_config
 fi
 
 # sbx binary. A bare name is looked up on PATH.
@@ -66,7 +112,7 @@ Usage:
       New sandbox, foreground (Ctrl+C to stop). Port auto-picked from
       ${BASE_PORT} (opencode) or ${T3_BASE_PORT} (t3-code) if omitted.
       Mounts SKILLS_DIR read-only and allows NETWORK_ALLOW hosts if set.
-      Refreshes the skills store if SKILLS_IMPORT=1 (see reload-skills).
+      Refreshes the skills store if SKILLS_IMPORT=1.
 
   $SCRIPT_NAME start <project_name|sandbox_name> [host_port]
       Same, for an existing sandbox. Accepts the project name ('foo') or
@@ -86,11 +132,6 @@ Usage:
       sandbox is restarted (confirms first) so the server runs the new
       version. Survives stop/start; a recreated sandbox starts at the
       image's version again.
-
-  $SCRIPT_NAME reload-skills
-      Refreshes the skills store only ('sbx skills import --force') --
-      no sandbox is touched. Running sandboxes won't see it until their
-      next start/reload; new ones (create/start) pick it up automatically.
 
   $SCRIPT_NAME ls [all]
       List managed sandboxes (opencode-/claude-/t3-code- prefix). 'all'
@@ -122,7 +163,6 @@ Examples:
   $SCRIPT_NAME start t3-code-webapp
   $SCRIPT_NAME reload myapp [claude]
   $SCRIPT_NAME upgrade webapp
-  $SCRIPT_NAME reload-skills
   $SCRIPT_NAME ls [all]
   $SCRIPT_NAME rm myapp [claude]
 
@@ -221,7 +261,7 @@ reload_skills_store() {
 }
 
 # The automatic refresh before create/start, controlled by SKILLS_IMPORT.
-# The explicit reload/reload-skills commands always refresh.
+# The explicit reload command always refreshes.
 maybe_reload_skills_store() {
   if [[ "$SKILLS_IMPORT" == "1" ]]; then
     reload_skills_store
@@ -482,11 +522,6 @@ case "$CMD" in
     else
       echo "Not restarted; the new version is used on the next '$SCRIPT_NAME start ${PROJECT_NAME}'."
     fi
-    ;;
-
-  reload-skills)
-    reload_skills_store
-    echo "Skills store refreshed. Running sandboxes won't see this until their next start/reload."
     ;;
 
   ls|list)

@@ -8,36 +8,22 @@ the project folder you mount.
 Why: one sandbox and one pairing for all three providers, instead of installing and authorizing
 each CLI on your own machine.
 
-## Ways to run it
-
-| Way | Use it when | Files |
-| --- | --- | --- |
-| **sbx, custom image** (this README) | Default | `Dockerfile.sbx`, `sbx-custom-kit/`, `sandbox.sh` |
-| sbx, mixin kits | You prefer T3 Code's SSH integration on Docker's stock agent images | `sbx-kit/`, see [docs/sbx-mixin-kits.md](docs/sbx-mixin-kits.md) |
-| Plain Docker | You don't use sbx | `Dockerfile`, see [docs/plain-docker.md](docs/plain-docker.md) |
+There are two ways to run a sandbox, both using the same image:
+[with sandbox.sh](#run-with-sandboxsh) (recommended) or [with sbx directly](#run-with-sbx-directly).
+Not using sbx at all? See [docs/plain-docker.md](docs/plain-docker.md).
 
 ## Prerequisites
 
-- git
-- Docker (Desktop or Engine), to build the image
+- macOS 14+ on Apple silicon, or Ubuntu 24.04+ (x86-64/arm64) with KVM enabled and your user in
+  the `kvm` group (required by sbx)
 - [sbx](https://docs.docker.com/ai/sandboxes/install/), signed in to Docker
-- bash and jq, for `sandbox.sh`
+- Docker (Desktop or Engine), to build the image
+- git, bash, jq
 
-macOS:
+## Build the image
 
-- macOS 14 or later on Apple silicon (required by sbx)
-- `brew install jq`
-
-Linux:
-
-- Ubuntu 24.04 or later, x86-64 or arm64 (required by sbx)
-- KVM enabled, and your user in the `kvm` group (`sudo usermod -aG kvm $USER`)
-- `sudo apt install jq`
-
-## Quick start
-
-**1. Build the image and load it into sbx.** sbx has its own image store, so a local build isn't
-visible to it until loaded. Repeat after changing `Dockerfile.sbx`.
+sbx has its own image store, so a local build isn't visible to it until loaded. Repeat after
+changing `Dockerfile.sbx`.
 
 ```bash
 docker build -f Dockerfile.sbx -t t3-code-sandbox-sbx .
@@ -45,18 +31,51 @@ docker image save t3-code-sandbox-sbx -o t3-code-sandbox-sbx.tar
 sbx template load t3-code-sandbox-sbx.tar
 ```
 
-**2. Create a sandbox, publish T3 Code's port and attach to its log.**
+## Run with sandbox.sh
+
+`sandbox.sh` wraps the sbx commands. It picks a free host port (from 3773), reuses it on restart,
+and prints a ready-to-use `Local URL` for pairing.
+
+```bash
+./sandbox.sh create myapp ~/code/myapp t3-code   # new sandbox for a folder, attaches to T3 Code's log
+./sandbox.sh start myapp                         # start it again later
+./sandbox.sh upgrade myapp                       # update T3 Code inside the sandbox
+./sandbox.sh reload myapp                        # restart to pick up refreshed skills
+./sandbox.sh ls                                  # list sandboxes managed by the script
+./sandbox.sh rm myapp                            # delete the sandbox (asks first)
+```
+
+It also runs Docker's stock Claude Code and OpenCode sandboxes on their own, without T3 Code:
+
+```bash
+./sandbox.sh create api ~/code/api claude        # interactive Claude Code
+./sandbox.sh create web ~/code/web               # OpenCode server
+```
+
+Settings go in `~/.config/t3-sandbox/config.conf` (see `config.example.conf`). Full reference:
+[docs/sandbox.md](docs/sandbox.md).
+
+## Run with sbx directly
 
 ```bash
 sbx create --name t3-code-myapp --kit ./sbx-custom-kit/ t3-code ~/code/myapp
 sbx exec t3-code-myapp true                      # start it
-sbx ports t3-code-myapp --publish 3773:3773
-sbx run --name t3-code-myapp                     # T3 Code's server log, incl. pairing URL
+sbx ports t3-code-myapp --publish 3773:3773      # publish T3 Code's port on 127.0.0.1
+sbx run --name t3-code-myapp                     # attach to T3 Code's log
+sbx rm t3-code-myapp                             # delete the sandbox
 ```
 
-The sandbox keeps running only while `sbx run` is attached.
+## Pair and log in
 
-**3. Log in to the providers** (once per sandbox):
+Both ways attach to T3 Code's log. The sandbox keeps running while it's attached.
+
+**Pair the T3 Code app.** With `sandbox.sh`, use the `Local URL` line from the log. With sbx
+directly, take the `Pairing URL` line and swap its host for `127.0.0.1:3773`, keeping the token.
+Get a new token with `sbx exec t3-code-myapp t3 pair`. Then add the project in the app. The
+workspace is mounted at its host path (e.g. `/Users/you/code/myapp`).
+
+**Log in to the providers**, once per sandbox. The easiest way is a terminal in the T3 Code app,
+connected to the sandbox. Or run them from the host:
 
 ```bash
 sbx exec -it t3-code-myapp claude auth login
@@ -64,40 +83,13 @@ sbx exec -it t3-code-myapp codex login
 sbx exec -it t3-code-myapp opencode auth login
 ```
 
-**4. Pair the T3 Code app.** The log prints a `Pairing URL` with the sandbox's internal address.
-Swap the host for the published one and keep the token:
-`http://127.0.0.1:3773/pair#token=…`. Get a new token with `sbx exec t3-code-myapp t3 pair`.
-Then add the project in the app. The workspace is mounted at its host path (e.g.
-`/Users/you/code/myapp`).
-
-## sandbox.sh
-
-A shortcut for steps 2 and 4. It picks a free port, reuses it on restart, and prints a ready-to-use
-`Local URL` for pairing.
-
-```bash
-./sandbox.sh create myapp ~/code/myapp t3-code
-./sandbox.sh start myapp
-./sandbox.sh upgrade myapp        # update T3 Code inside the sandbox
-```
-
-Settings go in `~/.config/t3-sandbox/config.sh` (see `config.example.sh`). The script also manages
-plain OpenCode and Claude Code sandboxes. See [docs/sandbox.md](docs/sandbox.md).
+See [docs/providers.md](docs/providers.md).
 
 ## Security
 
 Inside the sandbox, the agents run as `agent` with passwordless `sudo`. The isolation boundary is
 the sandbox itself, and the mounted workspace is writable. Treat the pairing URL like a password.
 See [docs/security.md](docs/security.md).
-
-## What's inside
-
-| Tool | npm package | Binary |
-| --- | --- | --- |
-| T3 Code | `t3` | `t3` |
-| Claude Code | `@anthropic-ai/claude-code` | `claude` |
-| Codex | `@openai/codex` | `codex` |
-| OpenCode | `opencode-ai` | `opencode` |
 
 ## License
 
