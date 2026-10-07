@@ -110,23 +110,25 @@ NETWORK_ALLOW="${NETWORK_ALLOW:-}"
 # Prints the help. Exits 0 when asked for (help/-h/--help), 1 otherwise.
 usage() {
   cat <<EOF
-Usage: $SCRIPT_NAME <command> [arguments] [agent]
+Usage: $SCRIPT_NAME <command> [arguments]
 
 Commands:
-  create <project> <folder> [port]  Create a sandbox for <folder> and start it
-  start <project> [port]            Start an existing sandbox
-  login <project> [provider]        Log in: claude/codex/opencode/copilot/all
-  upgrade <project> [port]          Update T3 Code (t3 sandboxes only)
-  reload <project> [port]           Restart to pick up refreshed skills
-  ls [all]                          List sandboxes ('all': every sbx sandbox)
-  rm <project>                      Remove a sandbox (asks first)
+  create <project> <dir> [port] [agent]  Create a sandbox for <dir>, start it
+  start <project> [port]                 Start an existing sandbox
+  login <project> [provider]             Log in to a provider (see below)
+  upgrade <project> [port]               Update T3 Code (t3 sandboxes only)
+  reload <project> [port]                Restart to pick up refreshed skills
+  ls [all]                               List sandboxes ('all': all of sbx)
+  rm <project>                           Remove a sandbox (asks first)
 
-Agents (optional last argument, default t3):
+Agents (default t3; other commands only need one to tell sandboxes apart):
   t3        T3 Code server, port from ${T3_BASE_PORT}
   claude    Claude Code, interactive
   codex     Codex CLI, interactive
   copilot   GitHub Copilot CLI, interactive
   opencode  OpenCode server, port from ${BASE_PORT}
+
+Providers for login: claude, codex, opencode, copilot, all
 
 <project> is your name ('myapp') or the sandbox's ('t3-myapp').
 Commands run in the foreground; the sandbox stops when they exit.
