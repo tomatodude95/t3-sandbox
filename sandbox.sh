@@ -107,89 +107,38 @@ T3_KIT="${T3_KIT:-$SCRIPT_DIR/t3-kit}"
 # ('sbx policy allow network --sandbox <name> ...'). Empty = no extra rules.
 NETWORK_ALLOW="${NETWORK_ALLOW:-}"
 
+# Prints the help. Exits 0 when asked for (help/-h/--help), 1 otherwise.
 usage() {
   cat <<EOF
-Usage:
-  $SCRIPT_NAME create <project_name> <workspace_path> [host_port] [agent]
-      New sandbox, foreground (Ctrl+C to stop). Port auto-picked from
-      ${T3_BASE_PORT} (t3) or ${BASE_PORT} (opencode) if omitted.
-      Mounts SKILLS_DIR read-only and allows NETWORK_ALLOW hosts if set.
-      Refreshes the skills store if SKILLS_IMPORT=1.
+Usage: $SCRIPT_NAME <command> [arguments] [agent]
 
-  $SCRIPT_NAME start <project_name|sandbox_name> [host_port]
-      Same, for an existing sandbox. Accepts the project name ('foo') or
-      the full sandbox name ('t3-foo'). Agent inferred; port optional
-      (opencode/t3 only) -- if sbx restored an earlier binding on
-      restart, that port is reused. Refreshes the skills store if
-      SKILLS_IMPORT=1.
+Commands:
+  create <project> <folder> [port]  Create a sandbox for <folder> and start it
+  start <project> [port]            Start an existing sandbox
+  login <project> [provider]        Log in: claude/codex/opencode/copilot/all
+  upgrade <project> [port]          Update T3 Code (t3 sandboxes only)
+  reload <project> [port]           Restart to pick up refreshed skills
+  ls [all]                          List sandboxes ('all': every sbx sandbox)
+  rm <project>                      Remove a sandbox (asks first)
 
-  $SCRIPT_NAME reload <project_name|sandbox_name> [host_port] [agent]
-      Refresh an already-running sandbox's skills: stops it (confirms
-      first), refreshes the skills store, starts it back up. Agent
-      inferred like start/rm.
+Agents (optional last argument, default t3):
+  t3        T3 Code server, port from ${T3_BASE_PORT}
+  claude    Claude Code, interactive
+  codex     Codex CLI, interactive
+  copilot   GitHub Copilot CLI, interactive
+  opencode  OpenCode server, port from ${BASE_PORT}
 
-  $SCRIPT_NAME upgrade <project_name|sandbox_name> [host_port]
-      t3 only. Updates T3 Code inside the sandbox to the latest npm
-      release (starts it first if stopped). If the version changed, the
-      sandbox is restarted (confirms first) so the server runs the new
-      version. Survives stop/start; a recreated sandbox starts at the
-      image's version again.
-
-  $SCRIPT_NAME login <project_name|sandbox_name> [provider]
-      Log in to a provider CLI inside the sandbox (starts it first if
-      stopped). provider: claude, codex, opencode, copilot, or all (each
-      of the sandbox's providers in turn). Required for t3 sandboxes;
-      other sandboxes default to their own agent. Pass the full sandbox
-      name if several agents share the project name.
-
-  $SCRIPT_NAME ls [all]
-      List managed sandboxes (t3-/claude-/codex-/copilot-/opencode- prefix). 'all'
-      shows raw 'sbx ls'.
-
-  $SCRIPT_NAME rm <project_name|sandbox_name> [agent]
-      Remove a sandbox (confirms, then 'sbx rm --force'). Not undoable.
-      Aliases: remove, delete.
-
-  agent (optional, must be the LAST argument): t3, claude, codex, copilot or opencode
-      On create it picks the agent (default: t3). Elsewhere it's inferred
-      from the existing sandbox and only needed when several agents share
-      a project name.
-
-      t3        Sandbox 't3-<project>'. T3 Code's server from the
-                t3-kit/ kit, port auto-picked from ${T3_BASE_PORT}.
-                Attaching shows its log with the pairing token; a 'Local
-                URL' line with 127.0.0.1:<port> is added after T3 Code's
-                Pairing URL.
-      claude    Sandbox 'claude-<project>'. Interactive Claude Code via
-                'sbx run'. No port.
-      codex     Sandbox 'codex-<project>'. Interactive Codex CLI via
-                'sbx run'. No port.
-      copilot   Sandbox 'copilot-<project>'. Interactive GitHub Copilot CLI
-                via 'sbx run'. No port.
-      opencode  Sandbox 'opencode-<project>'. 'opencode serve', port
-                auto-picked from ${BASE_PORT}.
+<project> is your name ('myapp') or the sandbox's ('t3-myapp').
+Commands run in the foreground; the sandbox stops when they exit.
 
 Examples:
-  $SCRIPT_NAME create webapp ~/code/webapp [3773]
-  $SCRIPT_NAME create myapp ~/code/myapp [8082] claude
-  $SCRIPT_NAME create tools ~/code/tools copilot
-  $SCRIPT_NAME create api ~/code/api opencode
-  $SCRIPT_NAME start webapp [3774]
-  $SCRIPT_NAME start claude-myapp
-  $SCRIPT_NAME reload webapp
-  $SCRIPT_NAME upgrade webapp
-  $SCRIPT_NAME login webapp codex
-  $SCRIPT_NAME ls [all]
-  $SCRIPT_NAME rm myapp [claude]
+  $SCRIPT_NAME create myapp ~/code/myapp
+  $SCRIPT_NAME create api ~/code/api claude
+  $SCRIPT_NAME login myapp codex
 
-Note: the sandbox stops once the command returns, so the agent runs in
-the foreground -- keep the terminal open.
-
-Settings (SBX_BIN, SKILLS_DIR, SKILLS_IMPORT, BASE_PORT, T3_BASE_PORT,
-OPENCODE_IMAGE, CLAUDE_IMAGE, CODEX_IMAGE, COPILOT_IMAGE, T3_KIT, NETWORK_ALLOW) are read from
-${CONFIG_FILE} or the environment.
+Settings: ~/.config/t3-sandbox/config.conf. Details: docs/sandbox.md
 EOF
-  exit 1
+  exit "${1:-1}"
 }
 
 require_cmd() {
@@ -478,8 +427,9 @@ run_foreground() {
   fi
 }
 
-require_cmd "$SBX_BIN" SBX_BIN
 [[ $# -lt 1 ]] && usage
+case "$1" in help|-h|--help) usage 0 ;; esac
+require_cmd "$SBX_BIN" SBX_BIN
 
 CMD="$1"; shift
 

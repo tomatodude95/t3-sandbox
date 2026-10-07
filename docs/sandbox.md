@@ -32,6 +32,7 @@ several agents share a project name. Commands that take a project name also acce
 | `upgrade <project> [port]` | `t3` sandboxes only: update T3 Code to the latest npm release, restart if it changed (asks first) |
 | `ls [all]` | List sandboxes managed by this script (`all`: raw `sbx ls`) |
 | `rm <project> [agent]` | Remove a sandbox (asks first). Aliases: `remove`, `delete` |
+| `help` | Show the short help (also `-h`, `--help`) |
 
 Without `[port]`, a port that sbx restored from an earlier run is reused. Otherwise the first
 free port from the base port up is used.
