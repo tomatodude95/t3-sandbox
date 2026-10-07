@@ -6,11 +6,14 @@ sandbox's `/home/agent` until the sandbox is removed.
 | Provider | Command |
 | --- | --- |
 | Claude Code | `claude auth login` |
-| Codex | `codex login` |
+| Codex | `codex login --device-auth` (by hand, see below) |
 | OpenCode | `opencode auth login` |
+| Copilot CLI (`copilot` sandboxes only) | `copilot login` |
 
 Run them in one of these places:
 
+- **sandbox.sh:** `./sandbox.sh login <project> <provider>` runs them for you. `all` logs in to
+  Claude Code, Codex and OpenCode in turn.
 - **T3 Code app:** open a terminal in the app once it's connected, and run the commands there.
 - **Host, sbx:** `sbx exec -it <sandbox> claude auth login`
 - **Host, plain Docker:** `docker exec -it <container> claude auth login`
@@ -20,4 +23,10 @@ Copilot. It's a device-code login at github.com/login/device and needs only a Co
 subscription, no Copilot CLI.
 
 Each command prints a URL for a browser login. Any browser works, it doesn't have to be on the
-same machine.
+same machine. Each login waits until you've finished in the browser; Claude Code asks you to paste
+back a code.
+
+Codex's browser login ends on a `localhost:1455` page inside the sandbox, which your browser can't
+load. `sandbox.sh login <project> codex` handles that: sign in, then paste the URL of that failed
+page into the terminal and the script finishes the login. By hand, use
+`codex login --device-auth` (enter a code at auth.openai.com) instead.

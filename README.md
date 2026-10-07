@@ -42,6 +42,7 @@ and prints a ready-to-use `Local URL` for pairing.
 ```bash
 ./sandbox.sh create myapp ~/code/myapp t3        # new sandbox; t3 is the default and can be left out
 ./sandbox.sh start myapp                         # start it again later
+./sandbox.sh login myapp claude                  # log in to a provider (claude, codex, opencode or all)
 ./sandbox.sh upgrade myapp                       # update T3 Code inside the sandbox
 ./sandbox.sh reload myapp                        # restart to pick up refreshed skills
 ./sandbox.sh ls                                  # list sandboxes managed by the script
@@ -79,12 +80,12 @@ directly, take the `Pairing URL` line and swap its host for `127.0.0.1:3773`, ke
 Get a new token with `sbx exec t3-myapp t3 pair`. Then add the project in the app. The
 workspace is mounted at its host path (e.g. `/Users/you/code/myapp`).
 
-**Log in to the providers**, once per sandbox. The easiest way is a terminal in the T3 Code app,
-connected to the sandbox. Or run them from the host:
+**Log in to the providers**, once per sandbox: `./sandbox.sh login myapp <provider>`, a terminal in the
+T3 Code app, or directly from the host:
 
 ```bash
 sbx exec -it t3-myapp claude auth login
-sbx exec -it t3-myapp codex login
+sbx exec -it t3-myapp codex login --device-auth
 sbx exec -it t3-myapp opencode auth login
 ```
 

@@ -134,6 +134,13 @@ Usage:
       version. Survives stop/start; a recreated sandbox starts at the
       image's version again.
 
+  $SCRIPT_NAME login <project_name|sandbox_name> [provider]
+      Log in to a provider CLI inside the sandbox (starts it first if
+      stopped). provider: claude, codex, opencode, copilot, or all (each
+      of the sandbox's providers in turn). Required for t3 sandboxes;
+      other sandboxes default to their own agent. Pass the full sandbox
+      name if several agents share the project name.
+
   $SCRIPT_NAME ls [all]
       List managed sandboxes (t3-/claude-/copilot-/opencode- prefix). 'all'
       shows raw 'sbx ls'.
@@ -168,6 +175,7 @@ Examples:
   $SCRIPT_NAME start claude-myapp
   $SCRIPT_NAME reload webapp
   $SCRIPT_NAME upgrade webapp
+  $SCRIPT_NAME login webapp codex
   $SCRIPT_NAME ls [all]
   $SCRIPT_NAME rm myapp [claude]
 
@@ -247,11 +255,96 @@ resolve_agent() {
 
   if [[ ${#found[@]} -gt 1 ]]; then
     echo "ERROR: multiple sandboxes exist for '${project}': ${found[*]}." >&2
-    echo "Add one of those as the last argument to disambiguate." >&2
+    if [[ "$CMD" == "login" ]]; then
+      echo "Use the full sandbox name, e.g. '${found[0]}-${project}'." >&2
+    else
+      echo "Add one of those as the last argument to disambiguate." >&2
+    fi
     exit 1
   elif [[ ${#found[@]} -eq 1 ]]; then
     AGENT="${found[0]}"
   fi
+}
+
+# Exits unless stdin is a terminal (needed for interactive prompts/logins).
+require_tty() {
+  if [[ ! -t 0 ]]; then
+    echo "ERROR: $1 needs an interactive terminal." >&2
+    exit 1
+  fi
+}
+
+# Fetches a URL from inside the sandbox and prints the HTTP status. Uses
+# curl if the sandbox has it, Node's fetch otherwise (always there).
+sandbox_fetch() {
+  # shellcheck disable=SC2016 # $1 is expanded by the sandbox's sh
+  "$SBX_BIN" exec "$1" sh -c '
+    if command -v curl >/dev/null 2>&1; then
+      curl -s -o /dev/null -w "%{http_code}" "$1"
+    else
+      node -e "fetch(process.argv[1]).then(r => process.stdout.write(String(r.status)))" "$1"
+    fi' sh "$2" 2>/dev/null || true
+}
+
+# Codex's browser login ends on a callback to http://localhost:1455 inside
+# the sandbox, which the host's browser can't reach. So: run `codex login` in
+# the background, show its sign-in URL, let the user paste the callback URL
+# their browser failed to load, and replay that URL inside the sandbox.
+# A wrong or stale URL is rejected by Codex (HTTP 400) and can be retried.
+codex_login() {
+  local name="$1" out pid url callback status rc
+  out="$(mktemp "${TMPDIR:-/tmp}/sandbox-codex.XXXXXX")"
+  "$SBX_BIN" exec "$name" codex login </dev/null >"$out" 2>&1 &
+  pid=$!
+  # On Ctrl+C, also stop the login server inside the sandbox via its /cancel
+  # endpoint (stopping the local sbx client may leave it running).
+  # shellcheck disable=SC2064 # expand now: name/pid/out are locals
+  trap "sandbox_fetch '$name' http://127.0.0.1:1455/cancel >/dev/null; kill $pid 2>/dev/null || true; rm -f '$out'; exit 130" INT TERM
+
+  url=""
+  for _ in $(seq 1 60); do
+    url="$(grep -o 'https://auth\.openai\.com/oauth/authorize[^[:space:]]*' "$out" | head -n 1 || true)"
+    [[ -n "$url" ]] && break
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.5
+  done
+  if [[ -z "$url" ]]; then
+    echo "ERROR: codex login didn't print a sign-in URL:" >&2
+    cat "$out" >&2
+    kill "$pid" 2>/dev/null || true
+    rm -f "$out"
+    trap - INT TERM
+    return 1
+  fi
+
+  echo "1. Open this URL in your browser and sign in:"
+  echo
+  echo "   $url"
+  echo
+  echo "2. Your browser then fails to load a page on localhost:1455. That's expected."
+  echo "   Copy the full URL from its address bar and paste it here."
+  echo
+  while true; do
+    read -r -p "Callback URL: " callback
+    callback="$(trim "$callback")"
+    callback="${callback#\"}"; callback="${callback%\"}"
+    if [[ ! "$callback" =~ ^http://(localhost|127\.0\.0\.1):1455/auth/callback\?.*code= ]]; then
+      echo "That isn't the localhost:1455/auth/callback URL. Try again (Ctrl+C to cancel)."
+      continue
+    fi
+    status="$(sandbox_fetch "$name" "$callback")"
+    if [[ "$status" == "400" ]]; then
+      echo "Codex rejected that URL (from an older attempt?). Paste the one from this sign-in."
+      continue
+    fi
+    break
+  done
+
+  if wait "$pid"; then rc=0; else rc=$?; fi
+  [[ "$rc" -ne 0 ]] && grep -i 'error' "$out" | tail -n 2 >&2
+  rm -f "$out"
+  trap - INT TERM
+  return "$rc"
 }
 
 # Returns 0 only on a literal y/Y. Refuses to proceed with no TTY rather
@@ -387,11 +480,12 @@ CMD="$1"; shift
 
 # Optional trailing agent argument (t3, claude, copilot, opencode); t3 is the
 # default. Outside `create` it's only needed for disambiguation, see
-# resolve_agent.
+# resolve_agent. Not parsed for `login`, whose last argument is a provider
+# (`login myapp claude` means Claude's login in the t3 sandbox).
 AGENT="t3"
 AGENT_EXPLICIT=0
 ARGS=("$@")
-if [[ ${#ARGS[@]} -gt 0 ]]; then
+if [[ "$CMD" != "login" && ${#ARGS[@]} -gt 0 ]]; then
   LAST="${ARGS[$((${#ARGS[@]} - 1))]}"
   if [[ "$LAST" == "t3" || "$LAST" == "claude" || "$LAST" == "copilot" || "$LAST" == "opencode" ]]; then
     AGENT="$LAST"
@@ -544,6 +638,77 @@ case "$CMD" in
     else
       echo "Not restarted; the new version is used on the next '$SCRIPT_NAME start ${PROJECT_NAME}'."
     fi
+    ;;
+
+  login)
+    [[ $# -lt 1 ]] && usage
+    PROJECT_NAME="$1"
+    PROVIDER="${2:-}"
+    resolve_agent "$PROJECT_NAME"
+    NAME="${AGENT}-${PROJECT_NAME}"
+
+    if ! sandbox_exists "$NAME"; then
+      echo "ERROR: sandbox '${NAME}' does not exist. Run '$SCRIPT_NAME ls' to see what does." >&2
+      exit 1
+    fi
+
+    case "$PROVIDER" in
+      ""|claude|codex|opencode|copilot|all) ;;
+      *)
+        echo "ERROR: unknown provider '${PROVIDER}' (claude, codex, opencode, copilot, all)." >&2
+        exit 1
+        ;;
+    esac
+
+    # A t3 sandbox has several providers, so one must be picked ('all' logs
+    # in to each in turn). Other sandboxes only have their own agent, so any
+    # other choice is redirected to it.
+    if [[ "$AGENT" == "t3" ]]; then
+      if [[ -z "$PROVIDER" ]]; then
+        echo "Pick a provider to log in to in '${NAME}': claude, codex, opencode or all." >&2
+        echo "Example: $SCRIPT_NAME login ${PROJECT_NAME} claude" >&2
+        exit 1
+      elif [[ "$PROVIDER" == "all" ]]; then
+        PROVIDERS=(claude codex opencode)
+      else
+        PROVIDERS=("$PROVIDER")
+      fi
+    else
+      if [[ -n "$PROVIDER" && "$PROVIDER" != "$AGENT" ]]; then
+        echo "NOTE: '${NAME}' only has ${AGENT}, so '${PROVIDER}' logs in to ${AGENT} instead."
+        echo "      Next time: $SCRIPT_NAME login ${NAME}"
+      fi
+      PROVIDERS=("$AGENT")
+    fi
+    if [[ "$AGENT" == "t3" && "$PROVIDER" == "copilot" ]]; then
+      echo "ERROR: t3 sandboxes don't include the Copilot CLI. Use GitHub Copilot via" >&2
+      echo "'$SCRIPT_NAME login ${PROJECT_NAME} opencode' (pick GitHub Copilot)." >&2
+      exit 1
+    fi
+    require_tty "login"
+
+    FAILED=()
+    for P in "${PROVIDERS[@]}"; do
+      case "$P" in
+        claude) LOGIN_CMD=(claude auth login) ;;
+        codex) LOGIN_CMD=(codex login) ;;  # run by codex_login, see there
+        opencode) LOGIN_CMD=(opencode auth login) ;;
+        copilot) LOGIN_CMD=(copilot login) ;;
+      esac
+      echo "== ${P} in '${NAME}': ${LOGIN_CMD[*]}"
+      if [[ "$P" == "codex" ]]; then
+        codex_login "$NAME" || FAILED+=("$P")
+      elif ! "$SBX_BIN" exec -it "$NAME" "${LOGIN_CMD[@]}"; then
+        FAILED+=("$P")
+      fi
+      echo
+    done
+
+    if [[ ${#FAILED[@]} -gt 0 ]]; then
+      echo "ERROR: login failed for: ${FAILED[*]}." >&2
+      exit 1
+    fi
+    echo "Logged in: ${PROVIDERS[*]}."
     ;;
 
   ls|list)
