@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # config.example.conf) or as an environment variable. The environment wins.
 CONFIG_FILE="$HOME/.config/t3-sandbox/config.conf"
 CONFIG_VARS=(SBX_BIN SKILLS_DIR SKILLS_IMPORT BASE_PORT T3_BASE_PORT
-  OPENCODE_IMAGE CLAUDE_IMAGE T3_KIT NETWORK_ALLOW)
+  OPENCODE_IMAGE CLAUDE_IMAGE COPILOT_IMAGE T3_KIT NETWORK_ALLOW)
 
 trim() {
   local s="$1"
@@ -92,9 +92,10 @@ BASE_PORT="${BASE_PORT:-8081}"
 # port inside the sandbox, see entrypoint.sh).
 T3_BASE_PORT="${T3_BASE_PORT:-3773}"
 
-# Agent/template names passed to `sbx create` for opencode and claude.
+# Agent/template names passed to `sbx create` for opencode, claude and copilot.
 OPENCODE_IMAGE="${OPENCODE_IMAGE:-opencode}"
 CLAUDE_IMAGE="${CLAUDE_IMAGE:-claude}"
+COPILOT_IMAGE="${COPILOT_IMAGE:-copilot}"
 
 # Path to the kind:sandbox kit (see t3-kit/spec.yaml) that launches
 # T3 Code's own server as the sandbox's agent process. Its `name:` field is
@@ -134,14 +135,14 @@ Usage:
       image's version again.
 
   $SCRIPT_NAME ls [all]
-      List managed sandboxes (opencode-/claude-/t3- prefix). 'all'
+      List managed sandboxes (t3-/claude-/copilot-/opencode- prefix). 'all'
       shows raw 'sbx ls'.
 
   $SCRIPT_NAME rm <project_name|sandbox_name> [agent]
       Remove a sandbox (confirms, then 'sbx rm --force'). Not undoable.
       Aliases: remove, delete.
 
-  agent (optional, must be the LAST argument): t3, claude or opencode
+  agent (optional, must be the LAST argument): t3, claude, copilot or opencode
       On create it picks the agent (default: t3). Elsewhere it's inferred
       from the existing sandbox and only needed when several agents share
       a project name.
@@ -153,12 +154,15 @@ Usage:
                 Pairing URL.
       claude    Sandbox 'claude-<project>'. Interactive Claude Code via
                 'sbx run'. No port.
+      copilot   Sandbox 'copilot-<project>'. Interactive GitHub Copilot CLI
+                via 'sbx run'. No port.
       opencode  Sandbox 'opencode-<project>'. 'opencode serve', port
                 auto-picked from ${BASE_PORT}.
 
 Examples:
   $SCRIPT_NAME create webapp ~/code/webapp [3773]
   $SCRIPT_NAME create myapp ~/code/myapp [8082] claude
+  $SCRIPT_NAME create tools ~/code/tools copilot
   $SCRIPT_NAME create api ~/code/api opencode
   $SCRIPT_NAME start webapp [3774]
   $SCRIPT_NAME start claude-myapp
@@ -171,7 +175,7 @@ Note: the sandbox stops once the command returns, so the agent runs in
 the foreground -- keep the terminal open.
 
 Settings (SBX_BIN, SKILLS_DIR, SKILLS_IMPORT, BASE_PORT, T3_BASE_PORT,
-OPENCODE_IMAGE, CLAUDE_IMAGE, T3_KIT, NETWORK_ALLOW) are read from
+OPENCODE_IMAGE, CLAUDE_IMAGE, COPILOT_IMAGE, T3_KIT, NETWORK_ALLOW) are read from
 ${CONFIG_FILE} or the environment.
 EOF
   exit 1
@@ -213,7 +217,7 @@ find_free_port() {
 # Rejects a host_port that isn't a number, e.g. a mistyped agent name.
 check_port() {
   if [[ -n "$1" && ! "$1" =~ ^[0-9]+$ ]]; then
-    echo "ERROR: host_port '$1' is not a number (agents: t3, claude, opencode)." >&2
+    echo "ERROR: host_port '$1' is not a number (agents: t3, claude, copilot, opencode)." >&2
     exit 1
   fi
 }
@@ -225,7 +229,7 @@ check_port() {
 # from the prefix.
 resolve_agent() {
   local project="$1" agent
-  for agent in claude opencode t3; do
+  for agent in claude copilot opencode t3; do
     if [[ "$project" == "${agent}-"* ]] && sandbox_exists "$project"; then
       PROJECT_NAME="${project#"${agent}-"}"
       AGENT="$agent"
@@ -237,6 +241,7 @@ resolve_agent() {
 
   local found=()
   sandbox_exists "claude-${project}" && found+=("claude")
+  sandbox_exists "copilot-${project}" && found+=("copilot")
   sandbox_exists "opencode-${project}" && found+=("opencode")
   sandbox_exists "t3-${project}" && found+=("t3")
 
@@ -330,8 +335,10 @@ run_foreground() {
   local host_port="$2"
   local agent="$3"
 
-  if [[ "$agent" == "claude" ]]; then
-    echo "Claude Code sandbox '${name}': interactive session (no web server)."
+  if [[ "$agent" == "claude" || "$agent" == "copilot" ]]; then
+    local label="Claude Code"
+    [[ "$agent" == "copilot" ]] && label="Copilot CLI"
+    echo "${label} sandbox '${name}': interactive session (no web server)."
     echo "Running in the foreground. Ctrl+C or 'exit' to stop."
     echo
 
@@ -378,7 +385,7 @@ require_cmd "$SBX_BIN" SBX_BIN
 
 CMD="$1"; shift
 
-# Optional trailing agent argument (t3, claude, opencode); t3 is the
+# Optional trailing agent argument (t3, claude, copilot, opencode); t3 is the
 # default. Outside `create` it's only needed for disambiguation, see
 # resolve_agent.
 AGENT="t3"
@@ -386,7 +393,7 @@ AGENT_EXPLICIT=0
 ARGS=("$@")
 if [[ ${#ARGS[@]} -gt 0 ]]; then
   LAST="${ARGS[$((${#ARGS[@]} - 1))]}"
-  if [[ "$LAST" == "t3" || "$LAST" == "claude" || "$LAST" == "opencode" ]]; then
+  if [[ "$LAST" == "t3" || "$LAST" == "claude" || "$LAST" == "copilot" || "$LAST" == "opencode" ]]; then
     AGENT="$LAST"
     AGENT_EXPLICIT=1
     unset 'ARGS[$((${#ARGS[@]} - 1))]'
@@ -401,10 +408,11 @@ case "$CMD" in
     WORKSPACE="$2"
     NAME="${AGENT}-${PROJECT_NAME}"
 
-    if [[ "$AGENT" == "claude" ]]; then
+    if [[ "$AGENT" == "claude" || "$AGENT" == "copilot" ]]; then
       HOST_PORT=""
       IMAGE="$CLAUDE_IMAGE"
-      [[ $# -ge 3 ]] && echo "NOTE: host_port '${3}' ignored in claude mode." >&2
+      [[ "$AGENT" == "copilot" ]] && IMAGE="$COPILOT_IMAGE"
+      [[ $# -ge 3 ]] && echo "NOTE: host_port '${3}' ignored in ${AGENT} mode." >&2
     else
       HOST_PORT="${3:-}"
       check_port "$HOST_PORT"
@@ -449,9 +457,9 @@ case "$CMD" in
     resolve_agent "$PROJECT_NAME"
     NAME="${AGENT}-${PROJECT_NAME}"
 
-    if [[ "$AGENT" == "claude" ]]; then
+    if [[ "$AGENT" == "claude" || "$AGENT" == "copilot" ]]; then
       HOST_PORT=""
-      [[ $# -ge 2 ]] && echo "NOTE: host_port '${2}' ignored in claude mode." >&2
+      [[ $# -ge 2 ]] && echo "NOTE: host_port '${2}' ignored in ${AGENT} mode." >&2
     else
       HOST_PORT="${2:-}"
       check_port "$HOST_PORT"
@@ -473,9 +481,9 @@ case "$CMD" in
     resolve_agent "$PROJECT_NAME"
     NAME="${AGENT}-${PROJECT_NAME}"
 
-    if [[ "$AGENT" == "claude" ]]; then
+    if [[ "$AGENT" == "claude" || "$AGENT" == "copilot" ]]; then
       HOST_PORT=""
-      [[ $# -ge 2 ]] && echo "NOTE: host_port '${2}' ignored in claude mode." >&2
+      [[ $# -ge 2 ]] && echo "NOTE: host_port '${2}' ignored in ${AGENT} mode." >&2
     else
       HOST_PORT="${2:-}"
       check_port "$HOST_PORT"
@@ -549,7 +557,7 @@ case "$CMD" in
     # Keep the header line (if any) plus rows for sandboxes this script
     # manages. The exact `sbx ls` column layout isn't parsed -- lines are
     # matched on the name prefix only, so extra columns pass through as-is.
-    FILTERED="$(grep -E '(^|[[:space:]])(opencode|claude|t3)-' <<<"$OUT" || true)"
+    FILTERED="$(grep -E '(^|[[:space:]])(opencode|claude|copilot|t3)-' <<<"$OUT" || true)"
 
     if [[ -z "${FILTERED//[[:space:]]/}" ]]; then
       echo "No sandboxes managed by this script."
@@ -558,7 +566,7 @@ case "$CMD" in
     fi
 
     HEADER="$(head -n 1 <<<"$OUT")"
-    if ! grep -Eq '(^|[[:space:]])(opencode|claude|t3)-' <<<"$HEADER"; then
+    if ! grep -Eq '(^|[[:space:]])(opencode|claude|copilot|t3)-' <<<"$HEADER"; then
       echo "$HEADER"
     fi
     echo "$FILTERED"

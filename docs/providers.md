@@ -15,5 +15,9 @@ Run them in one of these places:
 - **Host, sbx:** `sbx exec -it <sandbox> claude auth login`
 - **Host, plain Docker:** `docker exec -it <container> claude auth login`
 
+**GitHub Copilot in T3 Code** goes through OpenCode: run `opencode auth login` and pick GitHub
+Copilot. It's a device-code login at github.com/login/device and needs only a Copilot
+subscription, no Copilot CLI.
+
 Each command prints a URL for a browser login. Any browser works, it doesn't have to be on the
 same machine.
