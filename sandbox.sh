@@ -10,15 +10,43 @@ SCRIPT_NAME="$(basename "$0")"
 # from another directory, or via a symlink like /usr/local/bin/sandbox.
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
-# 8080 is reserved/left free; auto-picked ports for `start` begin here.
-BASE_PORT=8081
+# Every setting below can be set in this config file (see
+# config.example.sh) or as an environment variable. The environment wins.
+CONFIG_FILE="$HOME/.config/t3-sandbox/config.sh"
+CONFIG_VARS=(SBX_BIN SKILLS_DIR SKILLS_IMPORT BASE_PORT T3_BASE_PORT
+  OPENCODE_IMAGE CLAUDE_IMAGE T3CODE_KIT NETWORK_ALLOW)
 
-# T3 Code's own fixed container port (see entrypoint.sh); auto-picked host
-# ports for t3-code sandboxes begin here.
-T3_BASE_PORT=3773
+if [[ -f "$CONFIG_FILE" ]]; then
+  # Snapshot whatever the environment already sets, load the config, then
+  # restore the snapshot so environment variables override the config.
+  ENV_OVERRIDES="$(declare -p "${CONFIG_VARS[@]}" 2>/dev/null || true)"
+  # shellcheck source=/dev/null
+  source "$CONFIG_FILE"
+  eval "$ENV_OVERRIDES"
+fi
 
-# Image/template names passed to `sbx create`. Override via env if the
-# Claude Code image in your setup is named something else.
+# sbx binary. A bare name is looked up on PATH.
+SBX_BIN="${SBX_BIN:-sbx}"
+
+# Optional host folder (e.g. shared skills and AGENTS.md/CLAUDE.md files),
+# mounted read-only into every new sandbox at its host path. Empty = no mount.
+SKILLS_DIR="${SKILLS_DIR:-}"
+
+# 1 = refresh sbx's skills store ('sbx skills import --force') before every
+# create/start. Defaults to on when SKILLS_DIR is set, off otherwise.
+if [[ -z "${SKILLS_IMPORT:-}" ]]; then
+  if [[ -n "$SKILLS_DIR" ]]; then SKILLS_IMPORT=1; else SKILLS_IMPORT=0; fi
+fi
+
+# Auto-picked host ports for opencode start here. 8080 is left free since
+# many dev servers default to it.
+BASE_PORT="${BASE_PORT:-8081}"
+
+# Auto-picked host ports for t3-code start here (3773 is T3 Code's own
+# port inside the sandbox, see entrypoint.sh).
+T3_BASE_PORT="${T3_BASE_PORT:-3773}"
+
+# Agent/template names passed to `sbx create` for opencode and claude.
 OPENCODE_IMAGE="${OPENCODE_IMAGE:-opencode}"
 CLAUDE_IMAGE="${CLAUDE_IMAGE:-claude}"
 
@@ -27,13 +55,9 @@ CLAUDE_IMAGE="${CLAUDE_IMAGE:-claude}"
 # "t3-code", passed as the AGENT positional to `sbx create`/`sbx run`.
 T3CODE_KIT="${T3CODE_KIT:-$SCRIPT_DIR/sbx-custom-kit}"
 
-# Absolute path to the sbx binary. sbx isn't on PATH, so every call below
-# uses this instead of a bare `sbx`/`./sbx` -- that also makes this script
-# callable from any working directory. Override via env if it moves.
-SBX_BIN="${SBX_BIN:-[redacted]}"
-
-# [redacted]
-SKILLS_DIR="${SKILLS_DIR:-[redacted]}"
+# Optional comma-separated hosts allowed for every new sandbox
+# ('sbx policy allow network --sandbox <name> ...'). Empty = no extra rules.
+NETWORK_ALLOW="${NETWORK_ALLOW:-}"
 
 usage() {
   cat <<EOF
@@ -41,15 +65,15 @@ Usage:
   $SCRIPT_NAME create <project_name> <workspace_path> [host_port] [claude|t3-code]
       New sandbox, foreground (Ctrl+C to stop). Port auto-picked from
       ${BASE_PORT} (opencode) or ${T3_BASE_PORT} (t3-code) if omitted.
-      Also mounts SKILLS_DIR read-only for reference -- skills themselves
-      are picked up natively by sbx. Refreshes the skills store first
-      (see reload-skills).
+      Mounts SKILLS_DIR read-only and allows NETWORK_ALLOW hosts if set.
+      Refreshes the skills store if SKILLS_IMPORT=1 (see reload-skills).
 
   $SCRIPT_NAME start <project_name|sandbox_name> [host_port]
       Same, for an existing sandbox. Accepts the project name ('foo') or
       the full sandbox name ('t3-code-foo'). Agent inferred; port optional
       (opencode/t3-code only) -- if sbx restored an earlier binding on
-      restart, that port is reused. Refreshes the skills store first.
+      restart, that port is reused. Refreshes the skills store if
+      SKILLS_IMPORT=1.
 
   $SCRIPT_NAME reload <project_name|sandbox_name> [host_port] [claude|t3-code]
       Refresh an already-running sandbox's skills: stops it (confirms
@@ -92,26 +116,31 @@ Usage:
       a 'Local URL' line with 127.0.0.1:<port> is added right after it.
 
 Examples:
-  $SCRIPT_NAME create [redacted] [redacted] [8082] [claude]
-  $SCRIPT_NAME create [redacted] [redacted] [3773] t3-code
-  $SCRIPT_NAME start [redacted] [8090] [claude]
-  $SCRIPT_NAME start t3-code-[redacted]
-  $SCRIPT_NAME reload [redacted] [claude]
-  $SCRIPT_NAME upgrade [redacted]
+  $SCRIPT_NAME create myapp ~/code/myapp [8082] [claude]
+  $SCRIPT_NAME create webapp ~/code/webapp [3773] t3-code
+  $SCRIPT_NAME start myapp [8090] [claude]
+  $SCRIPT_NAME start t3-code-webapp
+  $SCRIPT_NAME reload myapp [claude]
+  $SCRIPT_NAME upgrade webapp
   $SCRIPT_NAME reload-skills
   $SCRIPT_NAME ls [all]
-  $SCRIPT_NAME rm [redacted] [claude]
+  $SCRIPT_NAME rm myapp [claude]
 
 Note: the sandbox stops once the command returns, so the agent runs in
 the foreground -- keep the terminal open.
+
+Settings (SBX_BIN, SKILLS_DIR, SKILLS_IMPORT, BASE_PORT, T3_BASE_PORT,
+OPENCODE_IMAGE, CLAUDE_IMAGE, T3CODE_KIT, NETWORK_ALLOW) are read from
+${CONFIG_FILE} or the environment.
 EOF
   exit 1
 }
 
-require_sbx() {
-  if [[ ! -x "$SBX_BIN" ]]; then
-    echo "ERROR: sbx not found or not executable at '${SBX_BIN}'." >&2
-    echo "Set SBX_BIN to override its location." >&2
+require_cmd() {
+  local cmd="$1" setting="${2:-}"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "ERROR: '${cmd}' not found. Install it and put it on PATH." >&2
+    [[ -n "$setting" ]] && echo "Or set ${setting} in ${CONFIG_FILE}." >&2
     exit 1
   fi
 }
@@ -184,13 +213,19 @@ confirm() {
   [[ "$reply" == "y" || "$reply" == "Y" ]]
 }
 
-# Refreshes sbx's shared skills store (~/Library/Application Support/
-# com.docker.sandboxes/sandboxes/agent-skills on macOS) from the host's
-# per-agent skill dirs (~/.claude/skills, ~/.agents/skills, ...). A running
-# sandbox won't see the update -- only its next start re-reads the store, so
-# this is always paired with a create/start/reload right after it.
+# Refreshes sbx's shared skills store from the host's per-agent skill dirs
+# (~/.claude/skills, ~/.agents/skills, ...). A running sandbox won't see the
+# update -- only its next start re-reads the store.
 reload_skills_store() {
   "$SBX_BIN" skills import --force
+}
+
+# The automatic refresh before create/start, controlled by SKILLS_IMPORT.
+# The explicit reload/reload-skills commands always refresh.
+maybe_reload_skills_store() {
+  if [[ "$SKILLS_IMPORT" == "1" ]]; then
+    reload_skills_store
+  fi
 }
 
 # Publishes sandbox_port on the host and sets PUBLISHED_PORT to the host port
@@ -202,6 +237,7 @@ reload_skills_store() {
 # after the sandbox is started ('sbx ports' only sees running sandboxes).
 publish_port() {
   local name="$1" requested="$2" sandbox_port="$3" base_port="$4" existing out
+  require_cmd jq
   existing="$("$SBX_BIN" ports "$name" --json 2>/dev/null \
     | jq -r --arg p "$sandbox_port" \
         '.[] | select((.sandbox_port | tostring) == $p) | .host_port // empty' \
@@ -257,10 +293,10 @@ run_foreground() {
   elif [[ "$agent" == "t3-code" ]]; then
     # Unlike opencode, T3 Code's server isn't launched via a separate 'sbx
     # exec ... serve' call -- it's the sandbox's own agent process (the
-    # kind:sandbox kit's `sandbox.entrypoint`), the same role claude/opencode
-    # play for their own sandboxes. 'sbx run' both starts a stopped sandbox
-    # and shows that process's live log, which is where the pairing token
-    # gets printed on startup.
+    # kind:sandbox kit's `sandbox.entrypoint`). 'sbx exec ... true' starts
+    # the sandbox so the port can be published first; 'sbx run' then
+    # attaches to that process's live log, which is where the pairing
+    # token gets printed on startup.
     "$SBX_BIN" exec "$name" true
     publish_port "$name" "$host_port" 3773 "$T3_BASE_PORT"
 
@@ -288,7 +324,7 @@ run_foreground() {
   fi
 }
 
-require_sbx
+require_cmd "$SBX_BIN" SBX_BIN
 [[ $# -lt 1 ]] && usage
 
 CMD="$1"; shift
@@ -331,21 +367,28 @@ case "$CMD" in
       exit 1
     fi
 
-    if [[ ! -d "$SKILLS_DIR" ]]; then
-      echo "ERROR: SKILLS_DIR '${SKILLS_DIR}' not found. Set SKILLS_DIR to override." >&2
-      exit 1
+    MOUNTS=()
+    if [[ -n "$SKILLS_DIR" ]]; then
+      if [[ ! -d "$SKILLS_DIR" ]]; then
+        echo "ERROR: SKILLS_DIR '${SKILLS_DIR}' not found. Fix or unset it in ${CONFIG_FILE}." >&2
+        exit 1
+      fi
+      MOUNTS+=("${SKILLS_DIR}:ro")
     fi
 
     if [[ "$AGENT" == "t3-code" ]]; then
       if [[ ! -d "$T3CODE_KIT" ]]; then
-        echo "ERROR: T3CODE_KIT '${T3CODE_KIT}' not found. Set T3CODE_KIT to override." >&2
+        echo "ERROR: T3CODE_KIT '${T3CODE_KIT}' not found. Fix it in ${CONFIG_FILE}." >&2
         exit 1
       fi
-      "$SBX_BIN" create --name "$NAME" --kit "$T3CODE_KIT" t3-code "$WORKSPACE" "${SKILLS_DIR}:ro"
+      "$SBX_BIN" create --name "$NAME" --kit "$T3CODE_KIT" t3-code "$WORKSPACE" ${MOUNTS[@]+"${MOUNTS[@]}"}
     else
-      "$SBX_BIN" create --name "$NAME" "$IMAGE" "$WORKSPACE" "${SKILLS_DIR}:ro"
+      "$SBX_BIN" create --name "$NAME" "$IMAGE" "$WORKSPACE" ${MOUNTS[@]+"${MOUNTS[@]}"}
     fi
-    reload_skills_store
+    if [[ -n "$NETWORK_ALLOW" ]]; then
+      "$SBX_BIN" policy allow network --sandbox "$NAME" "$NETWORK_ALLOW"
+    fi
+    maybe_reload_skills_store
     run_foreground "$NAME" "$HOST_PORT" "$AGENT"
     ;;
 
@@ -368,7 +411,7 @@ case "$CMD" in
       exit 1
     fi
 
-    reload_skills_store
+    maybe_reload_skills_store
     run_foreground "$NAME" "$HOST_PORT" "$AGENT"
     ;;
 
