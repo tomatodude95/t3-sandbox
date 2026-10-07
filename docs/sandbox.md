@@ -1,11 +1,12 @@
 # sandbox.sh
 
-A wrapper around `sbx` that creates, starts and removes Docker Sandboxes for four agents:
+A wrapper around `sbx` that creates, starts and removes Docker Sandboxes for five agents:
 
 | Agent | Sandbox name | What runs | Port |
 | --- | --- | --- | --- |
 | `t3` (default) | `t3-<project>` | `t3 serve` from the `t3-kit/` kit | published from `T3_BASE_PORT` (3773) |
 | `claude` | `claude-<project>` | interactive Claude Code via `sbx run` | none |
+| `codex` | `codex-<project>` | interactive Codex CLI via `sbx run` | none |
 | `copilot` | `copilot-<project>` | interactive GitHub Copilot CLI via `sbx run` | none |
 | `opencode` | `opencode-<project>` | `opencode serve` | published from `BASE_PORT` (8081) |
 
@@ -18,7 +19,7 @@ into sbx (see the README).
 
 ## Commands
 
-The agent (`t3`, `claude`, `copilot` or `opencode`) is an optional **last** argument. On `create` it
+The agent (`t3`, `claude`, `codex`, `copilot` or `opencode`) is an optional **last** argument. On `create` it
 defaults to `t3`. Other commands infer it from the existing sandbox and only need it when
 several agents share a project name. Commands that take a project name also accept the full sandbox name (`t3-myapp`).
 
@@ -63,6 +64,7 @@ keys are an error.
 | `T3_BASE_PORT` | `3773` | First host port tried for `t3` |
 | `OPENCODE_IMAGE` | `opencode` | sbx agent used for `opencode` sandboxes |
 | `CLAUDE_IMAGE` | `claude` | sbx agent used for `claude` sandboxes |
+| `CODEX_IMAGE` | `codex` | sbx agent used for `codex` sandboxes |
 | `COPILOT_IMAGE` | `copilot` | sbx agent used for `copilot` sandboxes |
 | `T3_KIT` | `t3-kit/` next to the script | Kit used for `t3` sandboxes |
 | `NETWORK_ALLOW` | unset | Comma-separated hosts allowed for each new sandbox (`sbx policy allow network --sandbox`). Applied on `create` only |

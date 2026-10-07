@@ -49,11 +49,12 @@ and prints a ready-to-use `Local URL` for pairing.
 ./sandbox.sh rm myapp                            # delete the sandbox (asks first)
 ```
 
-It also runs Docker's stock Claude Code, Copilot CLI and OpenCode sandboxes on their own, without
-T3 Code:
+It also runs Docker's stock Claude Code, Codex, Copilot CLI and OpenCode sandboxes on their own,
+without T3 Code:
 
 ```bash
 ./sandbox.sh create api ~/code/api claude        # interactive Claude Code
+./sandbox.sh create cli ~/code/cli codex         # interactive Codex CLI
 ./sandbox.sh create tools ~/code/tools copilot   # interactive GitHub Copilot CLI
 ./sandbox.sh create web ~/code/web opencode      # OpenCode server
 ```
