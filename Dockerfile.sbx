@@ -1,11 +1,10 @@
 FROM docker/sandbox-templates:shell-docker
 
-# Base image already provides: non-root `agent` user at UID 1000 with
-# passwordless sudo, /home/agent, Node.js/npm, git, make, python3 — the
-# requirements docs.docker.com/ai/sandboxes/customize/kit-reference lists for
-# a custom `kind: sandbox` kit image. g++ is the one build-toolchain piece
-# missing, needed because node-pty (a t3 dependency) has no prebuilt binary
-# for arm64 and compiles from source.
+# Base image already provides what a `kind: sandbox` kit image needs
+# (non-root `agent` user at UID 1000 with passwordless sudo, /home/agent) plus
+# Node.js/npm, git, make and python3. Only g++ is missing: node-pty (a t3
+# dependency) has no prebuilt binary for every platform (e.g. linux/arm64) and
+# compiles from source.
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends g++ \
     && rm -rf /var/lib/apt/lists/*
@@ -29,16 +28,10 @@ USER agent
 
 EXPOSE 3773
 
-# Deliberately no VOLUME here (unlike the plain-Docker Dockerfile) — sbx
-# already manages this whole sandbox's persistence/lifecycle itself
-# (survives stop/restart, wiped on `sbx rm`), and a `VOLUME` declaration
-# interacting with sbx's own erofs-based snapshotter is a likely contributor
-# to /home/agent starting out incompletely initialized.
+# No VOLUME: sbx manages the sandbox's persistence itself (survives
+# stop/restart, wiped on `sbx rm`).
 #
-# Deliberately no ENTRYPOINT/CMD override here — keep the base image's own
-# ["tini", "--"] / ["bash"]. sbx execs into the running container after
-# startup to inject kit files and its own generated agent-launch script; if
-# our own entrypoint becomes PID1 and t3 serve exits or the process model
-# doesn't match what sbx expects, the container isn't there anymore by the
-# time sbx tries to exec into it (confirmed: sbx-custom-kit/spec.yaml launches
-# entrypoint.sh as a backgrounded `setup.startup` command instead).
+# No ENTRYPOINT/CMD override: the base image's `tini --` / `bash` must stay
+# PID 1 so the container keeps running while sbx execs into it. sbx starts
+# entrypoint.sh itself as the sandbox's agent process, via `sandbox.entrypoint`
+# in sbx-custom-kit/spec.yaml.
