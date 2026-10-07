@@ -61,11 +61,11 @@ Settings go in `~/.config/t3-sandbox/config.conf` (see `config.example.conf`). F
 ## Run with sbx directly
 
 ```bash
-sbx create --name t3-code-myapp --kit ./sbx-custom-kit/ t3-code ~/code/myapp
-sbx exec t3-code-myapp true                      # start it
-sbx ports t3-code-myapp --publish 3773:3773      # publish T3 Code's port on 127.0.0.1
-sbx run --name t3-code-myapp                     # attach to T3 Code's log
-sbx rm t3-code-myapp                             # delete the sandbox
+sbx create --name t3-myapp --kit ./sbx-custom-kit/ t3 ~/code/myapp
+sbx exec t3-myapp true                           # start it
+sbx ports t3-myapp --publish 3773:3773           # publish T3 Code's port on 127.0.0.1
+sbx run --name t3-myapp                          # attach to T3 Code's log
+sbx rm t3-myapp                                  # delete the sandbox
 ```
 
 ## Pair and log in
@@ -74,16 +74,16 @@ Both ways attach to T3 Code's log. The sandbox keeps running while it's attached
 
 **Pair the T3 Code app.** With `sandbox.sh`, use the `Local URL` line from the log. With sbx
 directly, take the `Pairing URL` line and swap its host for `127.0.0.1:3773`, keeping the token.
-Get a new token with `sbx exec t3-code-myapp t3 pair`. Then add the project in the app. The
+Get a new token with `sbx exec t3-myapp t3 pair`. Then add the project in the app. The
 workspace is mounted at its host path (e.g. `/Users/you/code/myapp`).
 
 **Log in to the providers**, once per sandbox. The easiest way is a terminal in the T3 Code app,
 connected to the sandbox. Or run them from the host:
 
 ```bash
-sbx exec -it t3-code-myapp claude auth login
-sbx exec -it t3-code-myapp codex login
-sbx exec -it t3-code-myapp opencode auth login
+sbx exec -it t3-myapp claude auth login
+sbx exec -it t3-myapp codex login
+sbx exec -it t3-myapp opencode auth login
 ```
 
 See [docs/providers.md](docs/providers.md).

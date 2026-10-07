@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_NAME="$(basename "$0")"
 
 # Absolute path to this script's real directory (symlinks resolved), so
-# T3CODE_KIT below resolves correctly whether sandbox.sh is invoked directly,
+# T3_KIT below resolves correctly whether sandbox.sh is invoked directly,
 # from another directory, or via a symlink like /usr/local/bin/sandbox.
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # config.example.conf) or as an environment variable. The environment wins.
 CONFIG_FILE="$HOME/.config/t3-sandbox/config.conf"
 CONFIG_VARS=(SBX_BIN SKILLS_DIR SKILLS_IMPORT BASE_PORT T3_BASE_PORT
-  OPENCODE_IMAGE CLAUDE_IMAGE T3CODE_KIT NETWORK_ALLOW)
+  OPENCODE_IMAGE CLAUDE_IMAGE T3_KIT NETWORK_ALLOW)
 
 trim() {
   local s="$1"
@@ -88,7 +88,7 @@ fi
 # many dev servers default to it.
 BASE_PORT="${BASE_PORT:-8081}"
 
-# Auto-picked host ports for t3-code start here (3773 is T3 Code's own
+# Auto-picked host ports for t3 start here (3773 is T3 Code's own
 # port inside the sandbox, see entrypoint.sh).
 T3_BASE_PORT="${T3_BASE_PORT:-3773}"
 
@@ -98,8 +98,8 @@ CLAUDE_IMAGE="${CLAUDE_IMAGE:-claude}"
 
 # Path to the kind:sandbox kit (see sbx-custom-kit/spec.yaml) that launches
 # T3 Code's own server as the sandbox's agent process. Its `name:` field is
-# "t3-code", passed as the AGENT positional to `sbx create`/`sbx run`.
-T3CODE_KIT="${T3CODE_KIT:-$SCRIPT_DIR/sbx-custom-kit}"
+# "t3", passed as the AGENT positional to `sbx create`/`sbx run`.
+T3_KIT="${T3_KIT:-$SCRIPT_DIR/sbx-custom-kit}"
 
 # Optional comma-separated hosts allowed for every new sandbox
 # ('sbx policy allow network --sandbox <name> ...'). Empty = no extra rules.
@@ -110,14 +110,14 @@ usage() {
 Usage:
   $SCRIPT_NAME create <project_name> <workspace_path> [host_port] [agent]
       New sandbox, foreground (Ctrl+C to stop). Port auto-picked from
-      ${T3_BASE_PORT} (t3-code) or ${BASE_PORT} (opencode) if omitted.
+      ${T3_BASE_PORT} (t3) or ${BASE_PORT} (opencode) if omitted.
       Mounts SKILLS_DIR read-only and allows NETWORK_ALLOW hosts if set.
       Refreshes the skills store if SKILLS_IMPORT=1.
 
   $SCRIPT_NAME start <project_name|sandbox_name> [host_port]
       Same, for an existing sandbox. Accepts the project name ('foo') or
-      the full sandbox name ('t3-code-foo'). Agent inferred; port optional
-      (opencode/t3-code only) -- if sbx restored an earlier binding on
+      the full sandbox name ('t3-foo'). Agent inferred; port optional
+      (opencode/t3 only) -- if sbx restored an earlier binding on
       restart, that port is reused. Refreshes the skills store if
       SKILLS_IMPORT=1.
 
@@ -127,14 +127,14 @@ Usage:
       inferred like start/rm.
 
   $SCRIPT_NAME upgrade <project_name|sandbox_name> [host_port]
-      t3-code only. Updates T3 Code inside the sandbox to the latest npm
+      t3 only. Updates T3 Code inside the sandbox to the latest npm
       release (starts it first if stopped). If the version changed, the
       sandbox is restarted (confirms first) so the server runs the new
       version. Survives stop/start; a recreated sandbox starts at the
       image's version again.
 
   $SCRIPT_NAME ls [all]
-      List managed sandboxes (opencode-/claude-/t3-code- prefix). 'all'
+      List managed sandboxes (opencode-/claude-/t3- prefix). 'all'
       shows raw 'sbx ls'.
 
   $SCRIPT_NAME rm <project_name|sandbox_name> [agent]
@@ -146,7 +146,7 @@ Usage:
       from the existing sandbox and only needed when several agents share
       a project name.
 
-      t3        Sandbox 't3-code-<project>'. T3 Code's server from the
+      t3        Sandbox 't3-<project>'. T3 Code's server from the
                 sbx-custom-kit/ kit, port auto-picked from ${T3_BASE_PORT}.
                 Attaching shows its log with the pairing token; a 'Local
                 URL' line with 127.0.0.1:<port> is added after T3 Code's
@@ -171,7 +171,7 @@ Note: the sandbox stops once the command returns, so the agent runs in
 the foreground -- keep the terminal open.
 
 Settings (SBX_BIN, SKILLS_DIR, SKILLS_IMPORT, BASE_PORT, T3_BASE_PORT,
-OPENCODE_IMAGE, CLAUDE_IMAGE, T3CODE_KIT, NETWORK_ALLOW) are read from
+OPENCODE_IMAGE, CLAUDE_IMAGE, T3_KIT, NETWORK_ALLOW) are read from
 ${CONFIG_FILE} or the environment.
 EOF
   exit 1
@@ -200,7 +200,7 @@ sandbox_exists() {
 # Best-effort free-port scan using bash's /dev/tcp. Only detects TCP
 # listeners on 127.0.0.1; there's a small race window between check and use.
 # Takes the starting port to scan from (BASE_PORT for opencode, T3_BASE_PORT
-# for t3-code) since the two agents shouldn't collide on the same range.
+# for t3) since the two agents shouldn't collide on the same range.
 find_free_port() {
   local port="$1"
   while (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; do
@@ -218,19 +218,14 @@ check_port() {
   fi
 }
 
-# The command-line name of an agent: 't3' for t3-code, others unchanged.
-agent_arg() {
-  if [[ "$1" == "t3-code" ]]; then echo "t3"; else echo "$1"; fi
-}
-
 # Sets AGENT from whichever sandbox exists, unless an agent was passed
 # explicitly. Errors out if more than one variant exists and none was chosen.
-# Also accepts the full sandbox name (e.g. 't3-code-foo' for 'foo'): if that
+# Also accepts the full sandbox name (e.g. 't3-foo' for 'foo'): if that
 # exact sandbox exists, PROJECT_NAME is stripped to 'foo' and AGENT is set
 # from the prefix.
 resolve_agent() {
   local project="$1" agent
-  for agent in claude opencode t3-code; do
+  for agent in claude opencode t3; do
     if [[ "$project" == "${agent}-"* ]] && sandbox_exists "$project"; then
       PROJECT_NAME="${project#"${agent}-"}"
       AGENT="$agent"
@@ -243,13 +238,11 @@ resolve_agent() {
   local found=()
   sandbox_exists "claude-${project}" && found+=("claude")
   sandbox_exists "opencode-${project}" && found+=("opencode")
-  sandbox_exists "t3-code-${project}" && found+=("t3-code")
+  sandbox_exists "t3-${project}" && found+=("t3")
 
   if [[ ${#found[@]} -gt 1 ]]; then
-    local args=() a
-    for a in "${found[@]}"; do args+=("$(agent_arg "$a")"); done
     echo "ERROR: multiple sandboxes exist for '${project}': ${found[*]}." >&2
-    echo "Add one of '${args[*]}' as the last argument to disambiguate." >&2
+    echo "Add one of those as the last argument to disambiguate." >&2
     exit 1
   elif [[ ${#found[@]} -eq 1 ]]; then
     AGENT="${found[0]}"
@@ -346,7 +339,7 @@ run_foreground() {
     # to --print mode and fail with no stdin. 'sbx run' is the interactive
     # attach path sbx itself suggests, and it starts a stopped sandbox.
     "$SBX_BIN" run "$name"
-  elif [[ "$agent" == "t3-code" ]]; then
+  elif [[ "$agent" == "t3" ]]; then
     # Unlike opencode, T3 Code's server isn't launched via a separate 'sbx
     # exec ... serve' call -- it's the sandbox's own agent process (the
     # kind:sandbox kit's `sandbox.entrypoint`). 'sbx exec ... true' starts
@@ -385,17 +378,16 @@ require_cmd "$SBX_BIN" SBX_BIN
 
 CMD="$1"; shift
 
-# Optional trailing agent argument (t3, claude, opencode); t3 (the t3-code
-# agent) is the default. Outside `create` it's only needed for
-# disambiguation, see resolve_agent.
-AGENT="t3-code"
+# Optional trailing agent argument (t3, claude, opencode); t3 is the
+# default. Outside `create` it's only needed for disambiguation, see
+# resolve_agent.
+AGENT="t3"
 AGENT_EXPLICIT=0
 ARGS=("$@")
 if [[ ${#ARGS[@]} -gt 0 ]]; then
   LAST="${ARGS[$((${#ARGS[@]} - 1))]}"
   if [[ "$LAST" == "t3" || "$LAST" == "claude" || "$LAST" == "opencode" ]]; then
     AGENT="$LAST"
-    [[ "$LAST" == "t3" ]] && AGENT="t3-code"
     AGENT_EXPLICIT=1
     unset 'ARGS[$((${#ARGS[@]} - 1))]'
   fi
@@ -417,11 +409,11 @@ case "$CMD" in
       HOST_PORT="${3:-}"
       check_port "$HOST_PORT"
       IMAGE="$OPENCODE_IMAGE"
-      [[ "$AGENT" == "t3-code" ]] && IMAGE=""
+      [[ "$AGENT" == "t3" ]] && IMAGE=""
     fi
 
     if sandbox_exists "$NAME"; then
-      SUFFIX=""; [[ "$AGENT" != "t3-code" ]] && SUFFIX=" $(agent_arg "$AGENT")"
+      SUFFIX=""; [[ "$AGENT" != "t3" ]] && SUFFIX=" ${AGENT}"
       echo "ERROR: sandbox '${NAME}' already exists. Use '$SCRIPT_NAME start ${PROJECT_NAME}${SUFFIX}' instead." >&2
       exit 1
     fi
@@ -435,12 +427,12 @@ case "$CMD" in
       MOUNTS+=("${SKILLS_DIR}:ro")
     fi
 
-    if [[ "$AGENT" == "t3-code" ]]; then
-      if [[ ! -d "$T3CODE_KIT" ]]; then
-        echo "ERROR: T3CODE_KIT '${T3CODE_KIT}' not found. Fix it in ${CONFIG_FILE}." >&2
+    if [[ "$AGENT" == "t3" ]]; then
+      if [[ ! -d "$T3_KIT" ]]; then
+        echo "ERROR: T3_KIT '${T3_KIT}' not found. Fix it in ${CONFIG_FILE}." >&2
         exit 1
       fi
-      "$SBX_BIN" create --name "$NAME" --kit "$T3CODE_KIT" t3-code "$WORKSPACE" ${MOUNTS[@]+"${MOUNTS[@]}"}
+      "$SBX_BIN" create --name "$NAME" --kit "$T3_KIT" t3 "$WORKSPACE" ${MOUNTS[@]+"${MOUNTS[@]}"}
     else
       "$SBX_BIN" create --name "$NAME" "$IMAGE" "$WORKSPACE" ${MOUNTS[@]+"${MOUNTS[@]}"}
     fi
@@ -466,7 +458,7 @@ case "$CMD" in
     fi
 
     if ! sandbox_exists "$NAME"; then
-      SUFFIX=""; [[ "$AGENT_EXPLICIT" -eq 1 ]] && SUFFIX=" $(agent_arg "$AGENT")"
+      SUFFIX=""; [[ "$AGENT_EXPLICIT" -eq 1 ]] && SUFFIX=" ${AGENT}"
       echo "ERROR: sandbox '${NAME}' does not exist. Use '$SCRIPT_NAME create ${PROJECT_NAME} <workspace_path>${SUFFIX}' first." >&2
       exit 1
     fi
@@ -490,7 +482,7 @@ case "$CMD" in
     fi
 
     if ! sandbox_exists "$NAME"; then
-      SUFFIX=""; [[ "$AGENT_EXPLICIT" -eq 1 ]] && SUFFIX=" $(agent_arg "$AGENT")"
+      SUFFIX=""; [[ "$AGENT_EXPLICIT" -eq 1 ]] && SUFFIX=" ${AGENT}"
       echo "ERROR: sandbox '${NAME}' does not exist. Use '$SCRIPT_NAME create ${PROJECT_NAME} <workspace_path>${SUFFIX}' first." >&2
       exit 1
     fi
@@ -511,13 +503,13 @@ case "$CMD" in
     PROJECT_NAME="$1"
     HOST_PORT="${2:-}"
     check_port "$HOST_PORT"
-    AGENT="t3-code"
+    AGENT="t3"
     AGENT_EXPLICIT=1
     resolve_agent "$PROJECT_NAME"
     NAME="${AGENT}-${PROJECT_NAME}"
 
-    if [[ "$AGENT" != "t3-code" ]]; then
-      echo "ERROR: upgrade only supports t3-code sandboxes, not '${NAME}'." >&2
+    if [[ "$AGENT" != "t3" ]]; then
+      echo "ERROR: upgrade only supports t3 sandboxes, not '${NAME}'." >&2
       exit 1
     fi
     if ! sandbox_exists "$NAME"; then
@@ -557,7 +549,7 @@ case "$CMD" in
     # Keep the header line (if any) plus rows for sandboxes this script
     # manages. The exact `sbx ls` column layout isn't parsed -- lines are
     # matched on the name prefix only, so extra columns pass through as-is.
-    FILTERED="$(grep -E '(^|[[:space:]])(opencode|claude|t3-code)-' <<<"$OUT" || true)"
+    FILTERED="$(grep -E '(^|[[:space:]])(opencode|claude|t3)-' <<<"$OUT" || true)"
 
     if [[ -z "${FILTERED//[[:space:]]/}" ]]; then
       echo "No sandboxes managed by this script."
@@ -566,7 +558,7 @@ case "$CMD" in
     fi
 
     HEADER="$(head -n 1 <<<"$OUT")"
-    if ! grep -Eq '(^|[[:space:]])(opencode|claude|t3-code)-' <<<"$HEADER"; then
+    if ! grep -Eq '(^|[[:space:]])(opencode|claude|t3)-' <<<"$HEADER"; then
       echo "$HEADER"
     fi
     echo "$FILTERED"

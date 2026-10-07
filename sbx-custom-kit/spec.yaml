@@ -1,6 +1,6 @@
 schemaVersion: "2"
 kind: sandbox
-name: t3-code
+name: t3
 displayName: T3 Code
 description: >-
   Claude Code, Codex, OpenCode, and T3 Code's own headless server, all
