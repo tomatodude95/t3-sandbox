@@ -108,9 +108,9 @@ NETWORK_ALLOW="${NETWORK_ALLOW:-}"
 usage() {
   cat <<EOF
 Usage:
-  $SCRIPT_NAME create <project_name> <workspace_path> [host_port] [claude|t3-code]
+  $SCRIPT_NAME create <project_name> <workspace_path> [host_port] [agent]
       New sandbox, foreground (Ctrl+C to stop). Port auto-picked from
-      ${BASE_PORT} (opencode) or ${T3_BASE_PORT} (t3-code) if omitted.
+      ${T3_BASE_PORT} (t3-code) or ${BASE_PORT} (opencode) if omitted.
       Mounts SKILLS_DIR read-only and allows NETWORK_ALLOW hosts if set.
       Refreshes the skills store if SKILLS_IMPORT=1.
 
@@ -121,7 +121,7 @@ Usage:
       restart, that port is reused. Refreshes the skills store if
       SKILLS_IMPORT=1.
 
-  $SCRIPT_NAME reload <project_name|sandbox_name> [host_port] [claude|t3-code]
+  $SCRIPT_NAME reload <project_name|sandbox_name> [host_port] [agent]
       Refresh an already-running sandbox's skills: stops it (confirms
       first), refreshes the skills store, starts it back up. Agent
       inferred like start/rm.
@@ -137,31 +137,29 @@ Usage:
       List managed sandboxes (opencode-/claude-/t3-code- prefix). 'all'
       shows raw 'sbx ls'.
 
-  $SCRIPT_NAME rm <project_name|sandbox_name> [claude|t3-code]
+  $SCRIPT_NAME rm <project_name|sandbox_name> [agent]
       Remove a sandbox (confirms, then 'sbx rm --force'). Not undoable.
       Aliases: remove, delete.
 
-  claude (optional, must be LAST argument)
-      Use Claude Code instead of opencode -- 'claude-<project>' vs
-      'opencode-<project>'. Required on create; only for disambiguation
-      on start/rm. No port published (attaches via 'sbx run' instead).
+  agent (optional, must be the LAST argument): t3-code, claude or opencode
+      Sandboxes are named '<agent>-<project>'. On create it picks the
+      agent (default: t3-code). Elsewhere it's inferred from the existing
+      sandbox and only needed when several agents share a project name.
 
-  t3-code (optional, must be LAST argument)
-      Use T3 Code instead of opencode -- 't3-code-<project>'. Required
-      on create; only for disambiguation on start/rm. Launches via the
-      sbx-custom-kit/ kind:sandbox kit, port auto-picked from
-      ${T3_BASE_PORT}. T3 Code's own server is this sandbox's agent
-      process, so 'sbx run --name <sandbox>' shows its startup log
-      (including the pairing token) instead of an interactive CLI.
-      t3 serve's own Pairing URL/QR show the sandbox's internal address;
-      a 'Local URL' line with 127.0.0.1:<port> is added right after it.
+      t3-code   T3 Code's server from the sbx-custom-kit/ kit, port
+                auto-picked from ${T3_BASE_PORT}. Attaching shows its log
+                with the pairing token; a 'Local URL' line with
+                127.0.0.1:<port> is added after T3 Code's Pairing URL.
+      claude    Interactive Claude Code via 'sbx run'. No port.
+      opencode  'opencode serve', port auto-picked from ${BASE_PORT}.
 
 Examples:
-  $SCRIPT_NAME create myapp ~/code/myapp [8082] [claude]
-  $SCRIPT_NAME create webapp ~/code/webapp [3773] t3-code
-  $SCRIPT_NAME start myapp [8090] [claude]
-  $SCRIPT_NAME start t3-code-webapp
-  $SCRIPT_NAME reload myapp [claude]
+  $SCRIPT_NAME create webapp ~/code/webapp [3773]
+  $SCRIPT_NAME create myapp ~/code/myapp [8082] claude
+  $SCRIPT_NAME create api ~/code/api opencode
+  $SCRIPT_NAME start webapp [3774]
+  $SCRIPT_NAME start claude-myapp
+  $SCRIPT_NAME reload webapp
   $SCRIPT_NAME upgrade webapp
   $SCRIPT_NAME ls [all]
   $SCRIPT_NAME rm myapp [claude]
@@ -369,14 +367,14 @@ require_cmd "$SBX_BIN" SBX_BIN
 
 CMD="$1"; shift
 
-# Optional trailing 'claude'/'t3-code' selects that agent instead of opencode.
-# For `start`/`rm` it's optional: the agent is inferred from the existing sandbox.
-AGENT="opencode"
+# Optional trailing agent name; t3-code is the default. Outside `create`
+# it's only needed for disambiguation, see resolve_agent.
+AGENT="t3-code"
 AGENT_EXPLICIT=0
 ARGS=("$@")
 if [[ ${#ARGS[@]} -gt 0 ]]; then
   LAST="${ARGS[$((${#ARGS[@]} - 1))]}"
-  if [[ "$LAST" == "claude" || "$LAST" == "t3-code" ]]; then
+  if [[ "$LAST" == "t3-code" || "$LAST" == "claude" || "$LAST" == "opencode" ]]; then
     AGENT="$LAST"
     AGENT_EXPLICIT=1
     unset 'ARGS[$((${#ARGS[@]} - 1))]'
@@ -402,7 +400,7 @@ case "$CMD" in
     fi
 
     if sandbox_exists "$NAME"; then
-      SUFFIX=""; [[ "$AGENT" != "opencode" ]] && SUFFIX=" ${AGENT}"
+      SUFFIX=""; [[ "$AGENT" != "t3-code" ]] && SUFFIX=" ${AGENT}"
       echo "ERROR: sandbox '${NAME}' already exists. Use '$SCRIPT_NAME start ${PROJECT_NAME}${SUFFIX}' instead." >&2
       exit 1
     fi

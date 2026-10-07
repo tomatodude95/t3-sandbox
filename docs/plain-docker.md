@@ -1,13 +1,13 @@
 # Plain Docker
 
 Runs the same tools with ordinary `docker build`/`docker run`, without sbx. The image is
-`t3-code-sandbox`, built from `Dockerfile`, and works on arm64 and amd64.
+`t3-sandbox`, built from `Dockerfile`, and works on arm64 and amd64.
 
 ## Build and run
 
 ```bash
-docker build -t t3-code-sandbox .
-docker run -d --name t3code -p 127.0.0.1:3773:3773 -v ~/code/myapp:/workspace t3-code-sandbox
+docker build -t t3-sandbox .
+docker run -d --name t3code -p 127.0.0.1:3773:3773 -v ~/code/myapp:/workspace t3-sandbox
 ```
 
 - `/workspace` is your project. On first boot T3 Code creates a project for it.
@@ -40,6 +40,6 @@ SQLite file.
 Give each container its own name, host port and workspace. Leave `/home/agent` anonymous:
 
 ```bash
-docker run -d --name t3code-a -p 127.0.0.1:3773:3773 -v ~/code/a:/workspace t3-code-sandbox
-docker run -d --name t3code-b -p 127.0.0.1:3774:3773 -v ~/code/b:/workspace t3-code-sandbox
+docker run -d --name t3code-a -p 127.0.0.1:3773:3773 -v ~/code/a:/workspace t3-sandbox
+docker run -d --name t3code-b -p 127.0.0.1:3774:3773 -v ~/code/b:/workspace t3-sandbox
 ```

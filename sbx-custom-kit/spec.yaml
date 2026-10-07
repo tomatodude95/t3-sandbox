@@ -4,13 +4,13 @@ name: t3-code
 displayName: T3 Code
 description: >-
   Claude Code, Codex, OpenCode, and T3 Code's own headless server, all
-  pre-installed in one image (t3-code-sandbox-sbx, built from
+  pre-installed in one image (t3-sandbox-sbx, built from
   ../Dockerfile.sbx). T3 Code's `t3 serve` is this sandbox's agent
   process, the same role claude/opencode play for their own sandboxes —
   attaching with `sbx run` shows its live log output, including the pairing
   token printed at startup.
 sandbox:
-  image: "t3-code-sandbox-sbx"
+  image: "t3-sandbox-sbx"
   # Binds 0.0.0.0 (entrypoint.sh default): a loopback-only bind isn't
   # reachable through `sbx ports --publish`. The Pairing URL t3 serve prints
   # therefore shows the sandbox's internal address; sandbox.sh adds a

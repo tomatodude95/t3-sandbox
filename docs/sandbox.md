@@ -4,22 +4,22 @@ A wrapper around `sbx` that creates, starts and removes Docker Sandboxes for thr
 
 | Agent | Sandbox name | What runs | Port |
 | --- | --- | --- | --- |
-| `opencode` (default) | `opencode-<project>` | `opencode serve` | published from `BASE_PORT` (8081) |
+| `t3-code` (default) | `t3-code-<project>` | `t3 serve` from the `sbx-custom-kit/` kit | published from `T3_BASE_PORT` (3773) |
 | `claude` | `claude-<project>` | interactive Claude Code via `sbx run` | none |
-| `t3-code` | `t3-code-<project>` | `t3 serve` from the `sbx-custom-kit/` kit | published from `T3_BASE_PORT` (3773) |
+| `opencode` | `opencode-<project>` | `opencode serve` | published from `BASE_PORT` (8081) |
 
 Every command runs in the foreground. The sandbox stops when the command exits.
 
 ## Requirements
 
-`bash`, `sbx` and `jq` on `PATH`. The `t3-code` agent also needs the `t3-code-sandbox-sbx` image loaded
+`bash`, `sbx` and `jq` on `PATH`. The `t3-code` agent also needs the `t3-sandbox-sbx` image loaded
 into sbx (see the README).
 
 ## Commands
 
-The agent (`claude` or `t3-code`) is an optional **last** argument. It is required on `create`.
-Other commands infer it from the existing sandbox and only need it when several agents share a
-project name. Commands that take a project name also accept the full sandbox name (`t3-code-myapp`).
+The agent (`t3-code`, `claude` or `opencode`) is an optional **last** argument. On `create` it
+defaults to `t3-code`. Other commands infer it from the existing sandbox and only need it when
+several agents share a project name. Commands that take a project name also accept the full sandbox name (`t3-code-myapp`).
 
 | Command | Does |
 | --- | --- |
@@ -37,7 +37,8 @@ For `t3-code`, the startup log shows T3 Code's Pairing URL with the sandbox's in
 The script adds a `Local URL: http://127.0.0.1:<port>/pair#token=…` line after it. Use that one.
 
 ```bash
-sandbox.sh create webapp ~/code/webapp t3-code
+sandbox.sh create webapp ~/code/webapp
+sandbox.sh create api ~/code/api opencode
 sandbox.sh start webapp
 sandbox.sh rm webapp
 ```

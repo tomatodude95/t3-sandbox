@@ -1,4 +1,4 @@
-# t3-code-sandbox
+# t3-sandbox
 
 [T3 Code](https://github.com/pingdotgg/t3code), Claude Code, Codex and OpenCode, pre-installed in
 one [Docker Sandbox](https://docs.docker.com/ai/sandboxes/) (`sbx`). You drive all three providers
@@ -10,15 +10,18 @@ each CLI on your own machine.
 
 There are two ways to run a sandbox, both using the same image:
 [with sandbox.sh](#run-with-sandboxsh) (recommended) or [with sbx directly](#run-with-sbx-directly).
-Not using sbx at all? See [docs/plain-docker.md](docs/plain-docker.md).
+It also runs with plain Docker, without sbx: see [docs/plain-docker.md](docs/plain-docker.md).
 
 ## Prerequisites
 
-- macOS 14+ on Apple silicon, or Ubuntu 24.04+ (x86-64/arm64) with KVM enabled and your user in
-  the `kvm` group (required by sbx)
-- [sbx](https://docs.docker.com/ai/sandboxes/install/), signed in to Docker
-- Docker (Desktop or Engine), to build the image
-- git, bash, jq
+- macOS 14+ or Ubuntu 24.04+\*
+- [sbx](https://docs.docker.com/ai/sandboxes/install/)
+- Docker (Desktop or Engine)
+- git
+- bash
+- jq
+
+\* On Linux, KVM must be enabled and your user in the `kvm` group.
 
 ## Build the image
 
@@ -26,9 +29,9 @@ sbx has its own image store, so a local build isn't visible to it until loaded. 
 changing `Dockerfile.sbx`.
 
 ```bash
-docker build -f Dockerfile.sbx -t t3-code-sandbox-sbx .
-docker image save t3-code-sandbox-sbx -o t3-code-sandbox-sbx.tar
-sbx template load t3-code-sandbox-sbx.tar
+docker build -f Dockerfile.sbx -t t3-sandbox-sbx .
+docker image save t3-sandbox-sbx -o t3-sandbox-sbx.tar
+sbx template load t3-sandbox-sbx.tar
 ```
 
 ## Run with sandbox.sh
@@ -37,7 +40,7 @@ sbx template load t3-code-sandbox-sbx.tar
 and prints a ready-to-use `Local URL` for pairing.
 
 ```bash
-./sandbox.sh create myapp ~/code/myapp t3-code   # new sandbox for a folder, attaches to T3 Code's log
+./sandbox.sh create myapp ~/code/myapp t3-code   # new sandbox; t3-code is the default and can be left out
 ./sandbox.sh start myapp                         # start it again later
 ./sandbox.sh upgrade myapp                       # update T3 Code inside the sandbox
 ./sandbox.sh reload myapp                        # restart to pick up refreshed skills
@@ -49,7 +52,7 @@ It also runs Docker's stock Claude Code and OpenCode sandboxes on their own, wit
 
 ```bash
 ./sandbox.sh create api ~/code/api claude        # interactive Claude Code
-./sandbox.sh create web ~/code/web               # OpenCode server
+./sandbox.sh create web ~/code/web opencode      # OpenCode server
 ```
 
 Settings go in `~/.config/t3-sandbox/config.conf` (see `config.example.conf`). Full reference:
@@ -90,7 +93,3 @@ See [docs/providers.md](docs/providers.md).
 Inside the sandbox, the agents run as `agent` with passwordless `sudo`. The isolation boundary is
 the sandbox itself, and the mounted workspace is writable. Treat the pairing URL like a password.
 See [docs/security.md](docs/security.md).
-
-## License
-
-GPL-3.0, see [LICENSE](LICENSE).
