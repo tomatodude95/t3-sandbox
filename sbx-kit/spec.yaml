@@ -1,0 +1,22 @@
+schemaVersion: "2"
+kind: mixin
+name: t3-extra-providers
+displayName: T3 Code extra providers
+description: >-
+  Installs the Codex and OpenCode CLIs so T3 Code can drive all three
+  providers from one sandbox. Stack alongside Docker's official t3code kit
+  (docker.io/sbx/t3code-kit:latest), which installs T3 Code's own toolchain
+  and the t3 npm package.
+permissions:
+  network:
+    allow:
+      - registry.npmjs.org:443
+setup:
+  install:
+    - command: |
+        set -euo pipefail
+        npm install -g @openai/codex opencode-ai
+        codex --version
+        opencode --version
+      user: "0"
+      description: Install Codex CLI and OpenCode CLI

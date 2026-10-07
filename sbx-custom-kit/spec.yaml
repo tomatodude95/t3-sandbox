@@ -1,0 +1,29 @@
+schemaVersion: "2"
+kind: sandbox
+name: t3-code
+displayName: T3 Code
+description: >-
+  Claude Code, Codex, OpenCode, and T3 Code's own headless server, all
+  pre-installed in one image (built from docker/sandbox-templates:shell-docker
+  — see ../Dockerfile.sbx). T3 Code's `t3 serve` is this sandbox's agent
+  process, the same role claude/opencode play for their own sandboxes —
+  attaching with `sbx run` shows its live log output, including the pairing
+  token printed at startup.
+sandbox:
+  image: "t3-code-sandbox"
+  entrypoint: ["/usr/local/bin/entrypoint.sh"]
+# Reverted the T3_HOST=127.0.0.1 override: confirmed (via sbx ports on a real
+# sandbox) that binding loopback-only breaks reachability through sbx's own
+# port-publish, the same way it does under plain Docker's -p. Back to the
+# default 0.0.0.0 bind in entrypoint.sh — reachable, but self-reports a
+# 172.x address; see the README note on manually correcting the pairing URL.
+agentInstructions:
+  filename: AGENTS.md
+  content: |
+    ## T3 Code
+
+    This sandbox's agent process is T3 Code's own headless server
+    (`t3 serve`) on port 3773, not an interactive coding CLI. Attaching with
+    `sbx run` shows its live log output, including the pairing token printed
+    at startup. Mint a fresh pairing token anytime with
+    `sbx exec <sandbox-name> -- t3 pair`.
