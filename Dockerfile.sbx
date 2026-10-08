@@ -11,12 +11,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends g++ \
 
 USER agent
 
-# Providers T3 Code drives, plus T3 Code itself.
+# Providers T3 Code drives, plus T3 Code itself. The Copilot CLI isn't
+# driven by T3 Code yet; it's here for when it is.
 RUN npm install -g \
         t3@latest \
         @anthropic-ai/claude-code \
         @openai/codex \
         opencode-ai \
+        @github/copilot \
     && npm cache clean --force
 
 WORKDIR /home/agent/workspace

@@ -3,8 +3,8 @@ kind: sandbox
 name: t3
 displayName: T3 Code
 description: >-
-  Claude Code, Codex, OpenCode, and T3 Code's own headless server, all
-  pre-installed in one image (t3-sandbox-sbx, built from
+  Claude Code, Codex, OpenCode, the Copilot CLI, and T3 Code's own headless
+  server, all pre-installed in one image (t3-sandbox-sbx, built from
   ../Dockerfile.sbx). T3 Code's `t3 serve` is this sandbox's agent
   process, the same role claude/opencode play for their own sandboxes —
   attaching with `sbx run` shows its live log output, including the pairing

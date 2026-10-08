@@ -6,12 +6,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 make g++ git ca-certificates curl ripgrep sudo tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Providers T3 Code drives, plus T3 Code itself.
+# Providers T3 Code drives, plus T3 Code itself. The Copilot CLI isn't
+# driven by T3 Code yet; it's here for when it is.
 RUN npm install -g \
         t3@latest \
         @anthropic-ai/claude-code \
         @openai/codex \
         opencode-ai \
+        @github/copilot \
     && npm cache clean --force
 
 RUN useradd --create-home --shell /bin/bash agent \

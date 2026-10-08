@@ -8,19 +8,20 @@ sandbox's `/home/agent` until the sandbox is removed.
 | Claude Code | `claude auth login` |
 | Codex | `codex login --device-auth` (by hand, see below) |
 | OpenCode | `opencode auth login` |
-| Copilot CLI (`copilot` sandboxes only) | `copilot login` |
+| Copilot CLI | `copilot login` |
 
 Run them in one of these places:
 
 - **sandbox.sh:** `./sandbox.sh login <project> <provider>` runs them for you. `all` logs in to
-  Claude Code, Codex and OpenCode in turn.
+  Claude Code, Codex, OpenCode and the Copilot CLI in turn.
 - **T3 Code app:** open a terminal in the app once it's connected, and run the commands there.
 - **Host, sbx:** `sbx exec -it <sandbox> claude auth login`
 - **Host, plain Docker:** `docker exec -it <container> claude auth login`
 
 **GitHub Copilot in T3 Code** goes through OpenCode: run `opencode auth login` and pick GitHub
 Copilot. It's a device-code login at github.com/login/device and needs only a Copilot
-subscription, no Copilot CLI.
+subscription, no Copilot CLI. t3 sandboxes include the Copilot CLI too, but T3 Code doesn't use
+it yet.
 
 Each command prints a URL for a browser login. Any browser works, it doesn't have to be on the
 same machine. Each login waits until you've finished in the browser; Claude Code asks you to paste

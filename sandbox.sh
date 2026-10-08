@@ -785,11 +785,11 @@ case "$CMD" in
     # other choice is redirected to it.
     if [[ "$AGENT" == "t3" ]]; then
       if [[ -z "$PROVIDER" ]]; then
-        echo "Pick a provider to log in to in '${NAME}': claude, codex, opencode or all." >&2
+        echo "Pick a provider to log in to in '${NAME}': claude, codex, opencode, copilot or all." >&2
         echo "Example: $SCRIPT_NAME login ${PROJECT_NAME} claude" >&2
         exit 1
       elif [[ "$PROVIDER" == "all" ]]; then
-        PROVIDERS=(claude codex opencode)
+        PROVIDERS=(claude codex opencode copilot)
       else
         PROVIDERS=("$PROVIDER")
       fi
@@ -800,15 +800,18 @@ case "$CMD" in
       fi
       PROVIDERS=("$AGENT")
     fi
-    if [[ "$AGENT" == "t3" && "$PROVIDER" == "copilot" ]]; then
-      echo "ERROR: t3 sandboxes don't include the Copilot CLI. Use GitHub Copilot via" >&2
-      echo "'$SCRIPT_NAME login ${PROJECT_NAME} opencode' (pick GitHub Copilot)." >&2
-      exit 1
-    fi
     require_tty "login"
 
+    # Sandboxes created before a CLI was added to the image don't have it.
     FAILED=()
+    DONE=()
     for P in "${PROVIDERS[@]}"; do
+      if ! "$SBX_BIN" exec "$NAME" sh -c "command -v $P" >/dev/null 2>&1; then
+        echo "== ${P} isn't installed in '${NAME}', skipped."
+        echo
+        [[ "$PROVIDER" != "all" ]] && FAILED+=("$P")
+        continue
+      fi
       case "$P" in
         claude) LOGIN_CMD=(claude auth login) ;;
         codex) LOGIN_CMD=(codex login) ;;  # run by codex_login, see there
@@ -817,8 +820,10 @@ case "$CMD" in
       esac
       echo "== ${P} in '${NAME}': ${LOGIN_CMD[*]}"
       if [[ "$P" == "codex" ]]; then
-        codex_login "$NAME" || FAILED+=("$P")
-      elif ! "$SBX_BIN" exec -it "$NAME" "${LOGIN_CMD[@]}"; then
+        if codex_login "$NAME"; then DONE+=("$P"); else FAILED+=("$P"); fi
+      elif "$SBX_BIN" exec -it "$NAME" "${LOGIN_CMD[@]}"; then
+        DONE+=("$P")
+      else
         FAILED+=("$P")
       fi
       echo
@@ -828,7 +833,7 @@ case "$CMD" in
       echo "ERROR: login failed for: ${FAILED[*]}." >&2
       exit 1
     fi
-    echo "Logged in: ${PROVIDERS[*]}."
+    echo "Logged in: ${DONE[*]:-none}."
     ;;
 
   ls|list)
