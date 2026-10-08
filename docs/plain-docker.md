@@ -6,7 +6,7 @@ Runs the same tools with ordinary `docker build`/`docker run`, without sbx. The 
 ## Build and run
 
 ```bash
-docker build -t t3-sandbox .
+make docker                                      # or: docker build -t t3-sandbox .
 docker run -d --name t3 -p 127.0.0.1:3773:3773 -v ~/code/myapp:/workspace t3-sandbox
 ```
 

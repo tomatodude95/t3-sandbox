@@ -8,9 +8,8 @@ the project folder you mount.
 Why: one sandbox and one pairing for all three providers, instead of installing and authorizing
 each CLI on your own machine.
 
-There are two ways to run a sandbox, both using the same image:
-[with sandbox.sh](#run-with-sandboxsh) (recommended) or [with sbx directly](#run-with-sbx-directly).
-It also runs as a plain Docker container, without sbx: see [docs/plain-docker.md](docs/plain-docker.md).
+Below is the short way: `make` and `sandbox.sh`. Alternatives: [sbx directly](docs/sbx.md),
+[plain Docker](docs/plain-docker.md), [manual builds](docs/building.md).
 
 ## Prerequisites
 
@@ -20,19 +19,18 @@ It also runs as a plain Docker container, without sbx: see [docs/plain-docker.md
 - git
 - bash
 - jq
+- make (macOS: `xcode-select --install`)
 
 \* On Linux, KVM must be enabled and your user in the `kvm` group.
 
 ## Build the image
 
-sbx has its own image store, so a local build isn't visible to it until loaded. Repeat after
-changing `Dockerfile.sbx`.
-
 ```bash
-docker build -f Dockerfile.sbx -t t3-sandbox-sbx .
-docker image save t3-sandbox-sbx -o t3-sandbox-sbx.tar
-sbx template load t3-sandbox-sbx.tar
+make sandbox      # builds the image and loads it into sbx
 ```
+
+Repeat after changing `Dockerfile.sbx`. `make docker` builds the plain Docker image, `make all`
+both. See [docs/building.md](docs/building.md).
 
 ## Run with sandbox.sh
 
@@ -44,7 +42,7 @@ If you get "permission denied", run `chmod +x sandbox.sh` once.
 ./sandbox.sh create myapp ~/code/myapp t3        # new sandbox; t3 is the default and can be left out
 ./sandbox.sh start myapp                         # start it again later
 ./sandbox.sh start myapp -d                      # in the background; stop with ./sandbox.sh stop myapp
-./sandbox.sh login myapp claude                  # log in to a provider (claude, codex, opencode or all)
+./sandbox.sh login myapp claude                  # log in to a provider (claude, codex, opencode, copilot or all)
 ./sandbox.sh upgrade-providers myapp             # update the provider CLIs while T3 Code runs
 ./sandbox.sh reload myapp                        # restart to pick up refreshed skills
 ./sandbox.sh ls                                  # list sandboxes managed by the script
@@ -64,35 +62,13 @@ without T3 Code:
 Settings go in `~/.config/t3-sandbox/config.conf` (see `config.example.conf`). Full reference:
 [docs/sandbox.md](docs/sandbox.md).
 
-## Run with sbx directly
-
-```bash
-sbx create --name t3-myapp --kit ./t3-kit/ t3 ~/code/myapp
-sbx exec t3-myapp true                           # start it
-sbx ports t3-myapp --publish 3773:3773           # publish T3 Code's port on 127.0.0.1
-sbx run --name t3-myapp                          # attach to T3 Code's log
-sbx rm t3-myapp                                  # delete the sandbox
-```
-
 ## Pair and log in
 
-Both ways attach to T3 Code's log. The sandbox keeps running while it's attached.
+**Pair the T3 Code app** with the `Local URL` line `create` prints. Then add the project in the
+app. The workspace is mounted at its host path (e.g. `/Users/you/code/myapp`).
 
-**Pair the T3 Code app.** With `sandbox.sh`, use the `Local URL` line from the log. With sbx
-directly, take the `Pairing URL` line and swap its host for `127.0.0.1:3773`, keeping the token.
-Get a new token with `sbx exec t3-myapp t3 pair`. Then add the project in the app. The
-workspace is mounted at its host path (e.g. `/Users/you/code/myapp`).
-
-**Log in to the providers**, once per sandbox: `./sandbox.sh login myapp <provider>`, a terminal in the
-T3 Code app, or directly from the host:
-
-```bash
-sbx exec -it t3-myapp claude auth login
-sbx exec -it t3-myapp codex login --device-auth
-sbx exec -it t3-myapp opencode auth login
-```
-
-See [docs/providers.md](docs/providers.md).
+**Log in to the providers**, once per sandbox: `./sandbox.sh login myapp all`, or a terminal in the
+T3 Code app. See [docs/providers.md](docs/providers.md).
 
 ## Security
 

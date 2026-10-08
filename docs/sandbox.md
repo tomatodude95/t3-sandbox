@@ -15,7 +15,7 @@ Every command runs in the foreground. The sandbox stops when the command exits.
 ## Requirements
 
 `bash`, `sbx` and `jq` on `PATH`. The `t3` agent also needs the `t3-sandbox-sbx` image loaded
-into sbx (see the README).
+into sbx (`make sandbox`).
 
 ## Commands
 
