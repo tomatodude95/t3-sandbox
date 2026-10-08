@@ -14,7 +14,8 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 # config.example.conf) or as an environment variable. The environment wins.
 CONFIG_FILE="$HOME/.config/t3-sandbox/config.conf"
 CONFIG_VARS=(SBX_BIN SKILLS_DIR SKILLS_IMPORT BASE_PORT T3_BASE_PORT
-  OPENCODE_IMAGE CLAUDE_IMAGE CODEX_IMAGE COPILOT_IMAGE T3_KIT NETWORK_ALLOW)
+  OPENCODE_IMAGE CLAUDE_IMAGE CODEX_IMAGE COPILOT_IMAGE T3_KIT NETWORK_ALLOW
+  UPDATE_CHECK)
 
 trim() {
   local s="$1"
@@ -107,6 +108,10 @@ T3_KIT="${T3_KIT:-$SCRIPT_DIR/t3-kit}"
 # ('sbx policy allow network --sandbox <name> ...'). Empty = no extra rules.
 NETWORK_ALLOW="${NETWORK_ALLOW:-}"
 
+# 1 = check for provider updates on create/start/reload and offer to install
+# them, 0 = don't.
+UPDATE_CHECK="${UPDATE_CHECK:-1}"
+
 # Prints the help. Exits 0 when asked for (help/-h/--help), 1 otherwise.
 usage() {
   cat <<EOF
@@ -116,7 +121,7 @@ Commands:
   create <project> <dir> [port] [agent]  Create a sandbox for <dir>, start it
   start <project> [port]                 Start an existing sandbox
   login <project> [provider]             Log in to a provider (see below)
-  upgrade <project> [port]               Update T3 Code (t3 sandboxes only)
+  upgrade-providers <project>            t3 only; T3 Code itself needs a restart
   reload <project> [port]                Restart to pick up refreshed skills
   ls [all]                               List sandboxes ('all': all of sbx)
   rm <project>                           Remove a sandbox (asks first)
@@ -161,6 +166,13 @@ sandbox_exists() {
   # like 'claude-temp' against 'claude-temp-oai', since '-' is a word boundary.
   out="$("$SBX_BIN" ls 2>/dev/null || true)"
   awk -v n="$name" 'NR > 1 && $1 == n { found = 1 } END { exit !found }' <<<"$out"
+}
+
+# True if 'sbx ls --json' reports the sandbox as running.
+sandbox_running() {
+  require_cmd jq
+  "$SBX_BIN" ls --json 2>/dev/null \
+    | jq -e --arg n "$1" '.sandboxes[] | select(.name == $n) | .status == "running"' >/dev/null
 }
 
 # Best-effort free-port scan using bash's /dev/tcp. Only detects TCP
@@ -322,6 +334,126 @@ confirm() {
   [[ "$reply" == "y" || "$reply" == "Y" ]]
 }
 
+# Runs inside a sandbox (sh). 'check' prints "<cli> <installed> <latest>" for
+# each provider CLI with a newer npm release, or OFFLINE if the npm registry
+# doesn't answer within 2s. An npm package whose CLI isn't on PATH (left by an
+# interrupted npm install) shows as "<cli> missing <latest>". 'update <cli>...' updates those CLIs: npm installs
+# via npm, the rest (sbx's claude and copilot templates use native installs)
+# via their own updater. The npm registry has every CLI's latest version,
+# native ones included.
+# shellcheck disable=SC2016 # expanded by the sandbox's sh
+PROVIDERS_SH='
+pkg() {
+  case "$1" in
+    t3) echo t3 ;;
+    claude) echo @anthropic-ai/claude-code ;;
+    codex) echo @openai/codex ;;
+    opencode) echo opencode-ai ;;
+    copilot) echo @github/copilot ;;
+  esac
+}
+check() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    if [ -d "$(npm root -g)/$(pkg "$1")" ]; then
+      new="$(npm view "$(pkg "$1")" version 2>/dev/null)"
+      [ -n "$new" ] && echo "$1 missing $new"
+    fi
+    return 0
+  fi
+  cur="$("$1" --version 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | head -n 1)"
+  new="$(npm view "$(pkg "$1")" version 2>/dev/null)"
+  [ -n "$cur" ] && [ -n "$new" ] && [ "$cur" != "$new" ] || return 0
+  [ "$(printf "%s\n%s\n" "$cur" "$new" | sort -V | tail -n 1)" = "$new" ] && echo "$1 $cur $new"
+}
+CLIS="t3 claude codex opencode copilot"
+case "$1" in
+  check)
+    if ! curl -sf -m 2 -o /dev/null https://registry.npmjs.org/-/ping; then
+      echo OFFLINE
+      exit 0
+    fi
+    dir="$(mktemp -d)"
+    for cli in $CLIS; do check "$cli" >"$dir/$cli" & done
+    wait
+    for cli in $CLIS; do cat "$dir/$cli"; done
+    rm -rf "$dir"
+    ;;
+  update)
+    shift
+    root="$(npm root -g)"
+    pkgs=""
+    rc=0
+    for cli in "$@"; do
+      bin="$(command -v "$cli")" && bin="$(readlink -f "$bin")"
+      case "$bin" in
+        ""|"$root"/*)
+          p="$(pkg "$cli")"
+          # An interrupted npm install leaves the old copy npm set aside
+          # (.<name>-<8 chars>), and the next install fails with ENOTEMPTY.
+          rm -rf "$root/$(dirname "$p")/.$(basename "$p")-"???????? \
+            "$(npm prefix -g)/bin/.$cli-"????????
+          pkgs="$pkgs $p@latest"
+          ;;
+        *) "$cli" update || rc=1 ;;
+      esac
+    done
+    if [ -n "$pkgs" ]; then
+      npm install -g $pkgs --no-fund --no-audit || rc=1
+    fi
+    exit "$rc"
+    ;;
+esac'
+
+# Sets UPDATES to the outdated provider CLIs in sandbox $1 ("<cli> <installed>
+# <latest>" lines, empty if none). Starts the sandbox if it's stopped.
+# Returns 1 if the npm registry can't be reached.
+check_provider_updates() {
+  UPDATES="$("$SBX_BIN" exec "$1" sh -c "$PROVIDERS_SH" sh check 2>/dev/null || true)"
+  [[ "$UPDATES" != "OFFLINE" ]]
+}
+
+print_provider_updates() {
+  local cli cur new
+  while read -r cli cur new; do
+    printf '  %-9s %s -> %s\n' "$cli" "$cur" "$new"
+  done <<<"$UPDATES"
+}
+
+# Updates every CLI listed in UPDATES inside sandbox $1.
+install_provider_updates() {
+  local clis
+  clis="$(awk '{ printf "%s ", $1 }' <<<"$UPDATES")"
+  # shellcheck disable=SC2086 # one word per CLI
+  "$SBX_BIN" exec "$1" sh -c "$PROVIDERS_SH" sh update $clis
+}
+
+# The check on create/start/reload, controlled by UPDATE_CHECK. Skipped
+# without a terminal. Its 'sbx exec' starts a stopped sandbox without the
+# agent; 'sbx run --detached' would launch the agent too, and the later
+# 'sbx run' would then start a second T3 Code server next to it. Leaves the sandbox stopped if T3 Code itself was
+# updated, so the caller's start runs the new version.
+maybe_update_providers() {
+  local name="$1"
+  [[ "$UPDATE_CHECK" == "1" && -t 0 ]] || return 0
+  echo "Checking for provider updates..."
+  if ! check_provider_updates "$name"; then
+    echo "Can't reach registry.npmjs.org, skipping the update check."
+    return 0
+  fi
+  [[ -z "$UPDATES" ]] && return 0
+
+  echo "Updates available:"
+  print_provider_updates
+  confirm "Update all?" || return 0
+  if ! install_provider_updates "$name"; then
+    echo "WARNING: some updates failed, starting anyway." >&2
+  elif grep -q '^t3 ' <<<"$UPDATES"; then
+    echo "Restarting '${name}' to run the new T3 Code."
+    "$SBX_BIN" stop "$name"
+  fi
+  echo
+}
+
 # Refreshes sbx's shared skills store from the host's per-agent skill dirs
 # (~/.claude/skills, ~/.agents/skills, ...). A running sandbox won't see the
 # update -- only its next start re-reads the store.
@@ -390,7 +522,9 @@ run_foreground() {
   local host_port="$2"
   local agent="$3"
 
-  if [[ "$agent" == "claude" || "$agent" == "codex" || "$agent" == "copilot" ]]; then
+  maybe_update_providers "$name"
+
+  if [[ "$agent" == "claude"|| "$agent" == "codex" || "$agent" == "copilot" ]]; then
     local label="Claude Code"
     [[ "$agent" == "codex" ]] && label="Codex CLI"
     [[ "$agent" == "copilot" ]] && label="Copilot CLI"
@@ -566,18 +700,17 @@ case "$CMD" in
     fi
     ;;
 
-  upgrade)
+  upgrade-providers)
     [[ $# -lt 1 ]] && usage
     PROJECT_NAME="$1"
-    HOST_PORT="${2:-}"
-    check_port "$HOST_PORT"
     AGENT="t3"
     AGENT_EXPLICIT=1
     resolve_agent "$PROJECT_NAME"
     NAME="${AGENT}-${PROJECT_NAME}"
 
     if [[ "$AGENT" != "t3" ]]; then
-      echo "ERROR: upgrade only supports t3 sandboxes, not '${NAME}'." >&2
+      echo "ERROR: upgrade-providers only supports t3 sandboxes, not '${NAME}'." >&2
+      echo "Other sandboxes check for updates on '$SCRIPT_NAME start'." >&2
       exit 1
     fi
     if ! sandbox_exists "$NAME"; then
@@ -585,25 +718,46 @@ case "$CMD" in
       exit 1
     fi
 
-    # npm's global prefix in the image is owned by the agent user, so no
-    # sudo is needed. The running server keeps the old version loaded until
-    # its process restarts, hence the stop/start below.
-    OLD_VERSION="$("$SBX_BIN" exec "$NAME" t3 --version)"
-    "$SBX_BIN" exec "$NAME" npm install -g t3@latest --no-fund --no-audit
-    NEW_VERSION="$("$SBX_BIN" exec "$NAME" t3 --version)"
-
-    if [[ "$OLD_VERSION" == "$NEW_VERSION" ]]; then
-      echo "T3 Code in '${NAME}' is already up to date (${NEW_VERSION})."
-      exit 0
+    # T3 Code starts the provider CLIs from PATH for each new session, so
+    # updated ones are used right away. T3 Code itself keeps running the old
+    # version until the sandbox restarts. A stopped sandbox is started for
+    # the update (with 'sbx run --detached', which also launches T3 Code)
+    # and stopped again.
+    STARTED=0
+    if ! sandbox_running "$NAME"; then
+      echo "'${NAME}' isn't running. Starting it for the update; it stops again after."
+      "$SBX_BIN" run --name "$NAME" --detached >/dev/null
+      STARTED=1
     fi
 
-    echo "T3 Code in '${NAME}' upgraded: ${OLD_VERSION} -> ${NEW_VERSION}."
-    if confirm "Restart '${NAME}' so the server runs ${NEW_VERSION}?"; then
-      "$SBX_BIN" stop "$NAME"
-      run_foreground "$NAME" "$HOST_PORT" "$AGENT"
+    RC=0
+    if ! check_provider_updates "$NAME"; then
+      echo "ERROR: '${NAME}' can't reach registry.npmjs.org." >&2
+      RC=1
+    elif [[ -z "$UPDATES" ]]; then
+      echo "All providers in '${NAME}' are up to date."
     else
-      echo "Not restarted; the new version is used on the next '$SCRIPT_NAME start ${PROJECT_NAME}'."
+      echo "Updating:"
+      print_provider_updates
+      if install_provider_updates "$NAME"; then
+        echo
+        echo "Done."
+        if [[ "$STARTED" -eq 0 ]]; then
+          echo "New sessions use the updated providers."
+          if grep -q '^t3 ' <<<"$UPDATES"; then
+            echo "T3 Code runs the new version after a restart (stop, then '$SCRIPT_NAME start ${PROJECT_NAME}')."
+          fi
+        fi
+      else
+        echo "ERROR: the update failed, see the output above." >&2
+        RC=1
+      fi
     fi
+
+    if [[ "$STARTED" -eq 1 ]]; then
+      "$SBX_BIN" stop "$NAME" >/dev/null
+    fi
+    exit "$RC"
     ;;
 
   login)

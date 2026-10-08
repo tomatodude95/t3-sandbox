@@ -29,13 +29,18 @@ several agents share a project name. Commands that take a project name also acce
 | `start <project> [port]` | Start an existing sandbox |
 | `reload <project> [port] [agent]` | Stop (asks first), refresh the skills store, start again |
 | `login <project> [provider]` | Log in to `claude`, `codex`, `opencode` or `copilot` inside the sandbox; `all` logs in to each of the sandbox's providers in turn. Required for `t3` sandboxes; other sandboxes default to their own agent. With several agents per project name, pass the full sandbox name |
-| `upgrade <project> [port]` | `t3` sandboxes only: update T3 Code to the latest npm release, restart if it changed (asks first) |
+| `upgrade-providers <project>` | `t3` sandboxes only: update T3 Code and the provider CLIs in place. New sessions use the new CLIs; T3 Code itself needs a restart. A stopped sandbox is started for the update and stopped again |
 | `ls [all]` | List sandboxes managed by this script (`all`: raw `sbx ls`) |
 | `rm <project> [agent]` | Remove a sandbox (asks first). Aliases: `remove`, `delete` |
 | `help` | Show the short help (also `-h`, `--help`) |
 
 Without `[port]`, a port that sbx restored from an earlier run is reused. Otherwise the first
 free port from the base port up is used.
+
+On `create`, `start` and `reload` the script checks for newer versions of the sandbox's CLIs
+(`t3`, `claude`, `codex`, `opencode`, `copilot`) and asks before updating them all. It skips the
+check if `registry.npmjs.org` doesn't answer within 2s, or without a terminal. Turn it off with
+`UPDATE_CHECK=0`.
 
 For `t3`, the startup log shows T3 Code's Pairing URL with the sandbox's internal address.
 The script adds a `Local URL: http://127.0.0.1:<port>/pair#token=…` line after it. Use that one.
@@ -69,6 +74,7 @@ keys are an error.
 | `COPILOT_IMAGE` | `copilot` | sbx agent used for `copilot` sandboxes |
 | `T3_KIT` | `t3-kit/` next to the script | Kit used for `t3` sandboxes |
 | `NETWORK_ALLOW` | unset | Comma-separated hosts allowed for each new sandbox (`sbx policy allow network --sandbox`). Applied on `create` only |
+| `UPDATE_CHECK` | `1` | Check for provider updates on `create`/`start`/`reload` |
 
 `reload` always refreshes the skills store, whatever `SKILLS_IMPORT` says. To refresh the store
 without touching a sandbox, run `sbx skills import --force`. Running sandboxes pick it up on their
