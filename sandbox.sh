@@ -562,6 +562,13 @@ run_foreground() {
   local host_port="$2"
   local agent="$3"
 
+  # Stop the sandbox when this command ends, Ctrl+C included. sbx doesn't
+  # reliably do that itself once the sandbox was already running when
+  # 'sbx run' attached (the update check and port publishing start it
+  # first).
+  # shellcheck disable=SC2064 # expand name now
+  trap "echo; echo 'Stopping ${name}...'; \"\$SBX_BIN\" stop '${name}' >/dev/null 2>&1 || true" EXIT
+
   maybe_update_providers "$name"
 
   if [[ "$agent" == "claude"|| "$agent" == "codex" || "$agent" == "copilot" ]]; then
