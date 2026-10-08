@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Used in usage/error messages instead of $0, so they read "sandbox.sh ..."
-# even when invoked via a full or relative path.
 SCRIPT_NAME="$(basename "$0")"
 
-# Absolute path to this script's real directory (symlinks resolved), so
-# T3_KIT below resolves correctly whether sandbox.sh is invoked directly,
-# from another directory, or via a symlink like /usr/local/bin/sandbox.
+# Symlinks resolved, so the default T3_KIT works when called via a symlink.
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
-# Every setting below can be set in this config file (see
-# config.example.conf) or as an environment variable. The environment wins.
+# Settings from this file (see config.example.conf); the environment wins.
 CONFIG_FILE="$HOME/.config/t3-sandbox/config.conf"
 CONFIG_VARS=(SBX_BIN SKILLS_DIR SKILLS_IMPORT BASE_PORT T3_BASE_PORT
   OPENCODE_IMAGE CLAUDE_IMAGE CODEX_IMAGE COPILOT_IMAGE T3_KIT NETWORK_ALLOW
@@ -24,10 +19,7 @@ trim() {
   printf '%s' "$s"
 }
 
-# Reads KEY=value lines from CONFIG_FILE. The file is parsed, never executed:
-# blank lines and lines starting with # are skipped, one pair of surrounding
-# quotes is stripped and a leading ~ expands to $HOME. Unknown keys are an
-# error. Keys already set in the environment are left alone.
+# Parsed, never sourced.
 load_config() {
   local line key value var known lineno=0 from_env=" "
   for var in "${CONFIG_VARS[@]}"; do
@@ -72,47 +64,30 @@ if [[ -f "$CONFIG_FILE" ]]; then
   load_config
 fi
 
-# sbx binary. A bare name is looked up on PATH.
 SBX_BIN="${SBX_BIN:-sbx}"
 
-# Optional host folder (e.g. shared skills and AGENTS.md/CLAUDE.md files),
-# mounted read-only into every new sandbox at its host path. Empty = no mount.
 SKILLS_DIR="${SKILLS_DIR:-}"
 
-# 1 = refresh sbx's skills store ('sbx skills import --force') before every
-# create/start. Defaults to on when SKILLS_DIR is set, off otherwise.
 if [[ -z "${SKILLS_IMPORT:-}" ]]; then
   if [[ -n "$SKILLS_DIR" ]]; then SKILLS_IMPORT=1; else SKILLS_IMPORT=0; fi
 fi
 
-# Auto-picked host ports for opencode start here. 8080 is left free since
-# many dev servers default to it.
+# Starts above 8080, which many dev servers use.
 BASE_PORT="${BASE_PORT:-8081}"
 
-# Auto-picked host ports for t3 start here (3773 is T3 Code's own
-# port inside the sandbox, see entrypoint.sh).
 T3_BASE_PORT="${T3_BASE_PORT:-3773}"
 
-# Agent/template names passed to `sbx create` for the non-t3 agents.
 OPENCODE_IMAGE="${OPENCODE_IMAGE:-opencode}"
 CLAUDE_IMAGE="${CLAUDE_IMAGE:-claude}"
 CODEX_IMAGE="${CODEX_IMAGE:-codex}"
 COPILOT_IMAGE="${COPILOT_IMAGE:-copilot}"
 
-# Path to the kind:sandbox kit (see t3-kit/spec.yaml) that launches
-# T3 Code's own server as the sandbox's agent process. Its `name:` field is
-# "t3", passed as the AGENT positional to `sbx create`/`sbx run`.
 T3_KIT="${T3_KIT:-$SCRIPT_DIR/t3-kit}"
 
-# Optional comma-separated hosts allowed for every new sandbox
-# ('sbx policy allow network --sandbox <name> ...'). Empty = no extra rules.
 NETWORK_ALLOW="${NETWORK_ALLOW:-}"
 
-# 1 = check for provider updates on create/start/reload and offer to install
-# them, 0 = don't.
 UPDATE_CHECK="${UPDATE_CHECK:-1}"
 
-# Prints the help. Exits 0 when asked for (help/-h/--help), 1 otherwise.
 usage() {
   cat <<EOF
 Usage: $SCRIPT_NAME <command> [arguments]
@@ -165,26 +140,19 @@ require_cmd() {
 
 sandbox_exists() {
   local name="$1" out
-  # Note: `sbx ls | grep -q` is unsafe under `set -o pipefail` -- grep exits
-  # on first match, sbx gets SIGPIPE (141), and pipefail turns that into a
-  # false "not found". Capture the output first instead.
-  # Exact match on the SANDBOX column: `grep -w` would also match prefixes
-  # like 'claude-temp' against 'claude-temp-oai', since '-' is a word boundary.
+  # Captured first: with pipefail, 'sbx ls | grep -q' can fail on SIGPIPE.
+  # Exact match, as grep -w would find 'claude-temp' in 'claude-temp-oai'.
   out="$("$SBX_BIN" ls 2>/dev/null || true)"
   awk -v n="$name" 'NR > 1 && $1 == n { found = 1 } END { exit !found }' <<<"$out"
 }
 
-# True if 'sbx ls --json' reports the sandbox as running.
 sandbox_running() {
   require_cmd jq
   "$SBX_BIN" ls --json 2>/dev/null \
     | jq -e --arg n "$1" '.sandboxes[] | select(.name == $n) | .status == "running"' >/dev/null
 }
 
-# Best-effort free-port scan using bash's /dev/tcp. Only detects TCP
-# listeners on 127.0.0.1; there's a small race window between check and use.
-# Takes the starting port to scan from (BASE_PORT for opencode, T3_BASE_PORT
-# for t3) since the two agents shouldn't collide on the same range.
+# Best effort: only sees listeners on 127.0.0.1.
 find_free_port() {
   local port="$1"
   while (exec 3<>"/dev/tcp/127.0.0.1/${port}") 2>/dev/null; do
@@ -194,8 +162,7 @@ find_free_port() {
   echo "$port"
 }
 
-# --detached is t3 only: interactive agents have no server to leave running,
-# and sbx stopped detached opencode sandboxes after a short while.
+# Not opencode: sbx stopped detached opencode sandboxes after a short while.
 check_detached() {
   if [[ "$DETACHED" -eq 1 && "$1" != "t3" ]]; then
     echo "ERROR: --detached only works for t3 sandboxes." >&2
@@ -203,7 +170,6 @@ check_detached() {
   fi
 }
 
-# Rejects a host_port that isn't a number, e.g. a mistyped agent name.
 check_port() {
   if [[ -n "$1" && ! "$1" =~ ^[0-9]+$ ]]; then
     echo "ERROR: host_port '$1' is not a number (agents: t3, claude, codex, copilot, opencode)." >&2
@@ -211,13 +177,9 @@ check_port() {
   fi
 }
 
-# Sets AGENT from whichever sandbox exists, unless an agent was passed
-# explicitly. Errors out if more than one variant exists and none was chosen.
-# Also accepts the full sandbox name (e.g. 't3-foo' for 'foo'): if that
-# exact sandbox exists, PROJECT_NAME is stripped to 'foo' and AGENT is set
-# from the prefix. A trailing agent argument that contradicts the prefix is
-# an error, unless it names a sandbox of its own ('start claude-x t3' with
-# 't3-claude-x' existing).
+# Sets AGENT from the existing sandbox unless one was given. Also accepts the
+# full sandbox name ('t3-foo'); a trailing agent contradicting its prefix is
+# an error unless that names a sandbox too ('claude-x t3' with 't3-claude-x').
 resolve_agent() {
   local project="$1" agent
   for agent in claude codex copilot opencode t3; do
@@ -255,7 +217,6 @@ resolve_agent() {
   fi
 }
 
-# Exits unless stdin is a terminal (needed for interactive prompts/logins).
 require_tty() {
   if [[ ! -t 0 ]]; then
     echo "ERROR: $1 needs an interactive terminal." >&2
@@ -263,9 +224,7 @@ require_tty() {
   fi
 }
 
-# Fetches a URL from inside the sandbox without following redirects and
-# prints "<status> <redirect target>". Uses curl if the sandbox has it,
-# Node's fetch otherwise (always there).
+# Prints "<status> <redirect target>" for a URL fetched inside the sandbox.
 sandbox_fetch() {
   # shellcheck disable=SC2016 # $1 is expanded by the sandbox's sh
   "$SBX_BIN" exec "$1" sh -c '
@@ -277,20 +236,16 @@ sandbox_fetch() {
     fi' sh "$2" 2>/dev/null || true
 }
 
-# Codex's browser login ends on a callback to http://localhost:1455 inside
-# the sandbox, which the host's browser can't reach. So: run `codex login` in
-# the background, show its sign-in URL, let the user paste the callback URL
-# their browser failed to load, and replay that URL inside the sandbox.
-# A wrong or stale URL is rejected by Codex (HTTP 400) and can be retried.
-# After a successful sign-in Codex redirects to its own /success page and
-# only exits once that page is requested, so the script follows it.
+# Codex's login callback goes to localhost:1455 inside the sandbox, which the
+# host's browser can't reach. The user pastes the failed callback URL and it's
+# replayed inside the sandbox. Codex only exits once its /success redirect is
+# fetched too.
 codex_login() {
   local name="$1" out pid url callback status location rc
   out="$(mktemp "${TMPDIR:-/tmp}/sandbox-codex.XXXXXX")"
   "$SBX_BIN" exec "$name" codex login </dev/null >"$out" 2>&1 &
   pid=$!
-  # On Ctrl+C, also stop the login server inside the sandbox via its /cancel
-  # endpoint (stopping the local sbx client may leave it running).
+  # /cancel stops the login server; killing the sbx client may not.
   # shellcheck disable=SC2064 # expand now: name/pid/out are locals
   trap "sandbox_fetch '$name' http://127.0.0.1:1455/cancel >/dev/null; kill $pid 2>/dev/null || true; rm -f '$out'; exit 130" INT TERM
 
@@ -343,8 +298,7 @@ codex_login() {
   return "$rc"
 }
 
-# Returns 0 only on a literal y/Y. Refuses to proceed with no TTY rather
-# than silently treating a closed stdin as consent.
+# No TTY is an error, not consent.
 confirm() {
   local prompt="$1" reply
   if [[ ! -t 0 ]]; then
@@ -356,13 +310,11 @@ confirm() {
   [[ "$reply" == "y" || "$reply" == "Y" ]]
 }
 
-# Runs inside a sandbox (sh). 'check' prints "<cli> <installed> <latest>" for
-# each provider CLI with a newer npm release, or OFFLINE if the npm registry
-# doesn't answer within 2s. An npm package whose CLI isn't on PATH (left by an
-# interrupted npm install) shows as "<cli> missing <latest>". 'update <cli>...' updates those CLIs: npm installs
-# via npm, the rest (sbx's claude and copilot templates use native installs)
-# via their own updater. The npm registry has every CLI's latest version,
-# native ones included.
+# Runs inside a sandbox. 'check' prints "<cli> <installed> <latest>" per
+# outdated CLI ("missing" for an npm package left without its command by an
+# interrupted install), or OFFLINE. npm has every CLI's latest version, but
+# 'update' uses the CLI's own updater for native installs (sbx's claude and
+# copilot templates).
 # shellcheck disable=SC2016 # expanded by the sandbox's sh
 PROVIDERS_SH='
 pkg() {
@@ -426,9 +378,7 @@ case "$1" in
     ;;
 esac'
 
-# Sets UPDATES to the outdated provider CLIs in sandbox $1 ("<cli> <installed>
-# <latest>" lines, empty if none). Starts the sandbox if it's stopped.
-# Returns 1 if the npm registry can't be reached.
+# Sets UPDATES; returns 1 if offline.
 check_provider_updates() {
   UPDATES="$("$SBX_BIN" exec "$1" sh -c "$PROVIDERS_SH" sh check 2>/dev/null || true)"
   [[ "$UPDATES" != "OFFLINE" ]]
@@ -441,7 +391,6 @@ print_provider_updates() {
   done <<<"$UPDATES"
 }
 
-# Updates every CLI listed in UPDATES inside sandbox $1.
 install_provider_updates() {
   local clis
   clis="$(awk '{ printf "%s ", $1 }' <<<"$UPDATES")"
@@ -449,11 +398,9 @@ install_provider_updates() {
   "$SBX_BIN" exec "$1" sh -c "$PROVIDERS_SH" sh update $clis
 }
 
-# The check on create/start/reload, controlled by UPDATE_CHECK. Skipped
-# without a terminal. Its 'sbx exec' starts a stopped sandbox without the
-# agent; 'sbx run --detached' would launch the agent too, and the later
-# 'sbx run' would then start a second T3 Code server next to it. Leaves the sandbox stopped if T3 Code itself was
-# updated, so the caller's start runs the new version.
+# Its 'sbx exec' starts the sandbox without T3 Code; 'sbx run --detached'
+# would start it, and the later 'sbx run' a second one. Stops the sandbox if
+# T3 Code was updated, so the caller's start runs the new version.
 maybe_update_providers() {
   local name="$1"
   [[ "$UPDATE_CHECK" == "1" && -t 0 ]] || return 0
@@ -476,28 +423,19 @@ maybe_update_providers() {
   echo
 }
 
-# Refreshes sbx's shared skills store from the host's per-agent skill dirs
-# (~/.claude/skills, ~/.agents/skills, ...). A running sandbox won't see the
-# update -- only its next start re-reads the store.
+# Running sandboxes see the refreshed store only after a restart.
 reload_skills_store() {
   "$SBX_BIN" skills import --force
 }
 
-# The automatic refresh before create/start, controlled by SKILLS_IMPORT.
-# The explicit reload command always refreshes.
 maybe_reload_skills_store() {
   if [[ "$SKILLS_IMPORT" == "1" ]]; then
     reload_skills_store
   fi
 }
 
-# Publishes sandbox_port on the host and sets PUBLISHED_PORT to the host port
-# in use. sbx remembers a sandbox's published ports and restores them when it
-# starts again, so an existing binding is reused instead of failing with
-# "already published": a requested port that's already bound is kept as-is,
-# and with no port requested, whatever sbx restored is reused. Only if
-# nothing is bound yet is a free port picked, starting at base_port. Must run
-# after the sandbox is started ('sbx ports' only sees running sandboxes).
+# Sets PUBLISHED_PORT, reusing the binding sbx restores on start. Needs a
+# running sandbox.
 publish_port() {
   local name="$1" requested="$2" sandbox_port="$3" base_port="$4" existing out
   require_cmd jq
@@ -516,7 +454,6 @@ publish_port() {
 
   PUBLISHED_PORT="${requested:-$(find_free_port "$base_port")}"
   if ! out="$("$SBX_BIN" ports "$name" --publish "${PUBLISHED_PORT}:${sandbox_port}" 2>&1)"; then
-    # Fallback in case the --json lookup above missed an existing binding.
     if ! grep -q "already published" <<<"$out"; then
       echo "$out" >&2
       exit 1
@@ -524,8 +461,6 @@ publish_port() {
   fi
 }
 
-# Prints "<command> (PID <pid>)" for each process besides sbx listening on
-# host port $1. Empty if there are none or lsof isn't installed.
 port_users() {
   command -v lsof >/dev/null 2>&1 || return 0
   lsof -nP +c 0 -iTCP:"$1" -sTCP:LISTEN -Fpc 2>/dev/null | awk '
@@ -536,11 +471,8 @@ port_users() {
     }' || true
 }
 
-# sbx re-publishes a sandbox's remembered port on start, even if another
-# program took it while the sandbox was stopped (e.g. the T3 Code desktop
-# app, which also picks ports from 3773 up). Connections may then reach
-# that program instead. Warns, and offers to move the sandbox to a free
-# port. Updates PUBLISHED_PORT.
+# sbx re-publishes a remembered port even if another program took it while
+# the sandbox was stopped (e.g. the T3 Code desktop app, also from 3773 up).
 check_port_conflict() {
   local name="$1" sandbox_port="$2" base_port="$3" users new
   users="$(port_users "$PUBLISHED_PORT")"
@@ -557,11 +489,8 @@ check_port_conflict() {
   echo
 }
 
-# Passes T3 Code's startup log through unchanged, adding a copyable
-# 127.0.0.1 pairing URL after the "Pairing URL:" line -- t3 serve prints the
-# sandbox's internal address, and only the host knows the published port.
-# The token match stops at whitespace/control chars so trailing ANSI color
-# codes aren't copied into the URL.
+# T3 Code's Pairing URL shows the sandbox's internal address. [:cntrl:] keeps
+# ANSI color codes out of the token.
 add_local_pairing_url() {
   local host_port="$1"
   awk -v port="$host_port" '
@@ -572,13 +501,10 @@ add_local_pairing_url() {
     }'
 }
 
-# True if the sandbox is running and T3 Code's server is up.
 t3_running() {
   sandbox_running "$1" && "$SBX_BIN" exec "$1" pgrep -f "t3 serve" >/dev/null 2>&1
 }
 
-# Mints a pairing token with 't3 pair', retrying while the server starts,
-# and prints it as a Local URL for the published port.
 print_pairing_url() {
   local name="$1" token=""
   for _ in $(seq 1 30); do
@@ -594,16 +520,13 @@ print_pairing_url() {
   echo "Local URL: http://127.0.0.1:${PUBLISHED_PORT}/pair${token} (valid 5 minutes)"
 }
 
-# Starts T3 Code's server in the background and returns. With $3 = 1
-# (create), also prints a Local URL for pairing.
+# $3 = 1: also print a pairing URL.
 run_detached() {
   local name="$1" host_port="$2" pair="$3"
 
   maybe_update_providers "$name"
   if ! t3_running "$name"; then
-    # Not via 'sbx run --detached': the agent process it starts stops once
-    # that call returns. setsid/nohup keep the server running after this
-    # 'sbx exec' returns (which also starts a stopped sandbox).
+    # Not 'sbx run --detached': its agent process stops when that call returns.
     "$SBX_BIN" exec -e "T3CODE_LOG_LEVEL=${T3_LOG_LEVEL}" "$name" sh -c \
       'setsid nohup /usr/local/bin/entrypoint.sh >/tmp/t3-serve.log 2>&1 </dev/null &'
   fi
@@ -625,16 +548,14 @@ run_foreground() {
     exit 1
   fi
 
-  # Stop the sandbox when this command ends, Ctrl+C included. sbx doesn't
-  # reliably do that itself once the sandbox was already running when
-  # 'sbx run' attached (the update check and port publishing start it
-  # first).
+  # sbx doesn't reliably stop a sandbox that was already running when
+  # 'sbx run' attached.
   # shellcheck disable=SC2064 # expand name now
   trap "echo; echo 'Stopping ${name}...'; \"\$SBX_BIN\" stop '${name}' >/dev/null 2>&1 || true" EXIT
 
   maybe_update_providers "$name"
 
-  if [[ "$agent" == "claude"|| "$agent" == "codex" || "$agent" == "copilot" ]]; then
+  if [[ "$agent" == "claude" || "$agent" == "codex" || "$agent" == "copilot" ]]; then
     local label="Claude Code"
     [[ "$agent" == "codex" ]] && label="Codex CLI"
     [[ "$agent" == "copilot" ]] && label="Copilot CLI"
@@ -642,17 +563,11 @@ run_foreground() {
     echo "Running in the foreground. Ctrl+C or 'exit' to stop."
     echo
 
-    # 'sbx exec' is non-interactive (no TTY), which makes Claude Code fall back
-    # to --print mode and fail with no stdin. 'sbx run' is the interactive
-    # attach path sbx itself suggests, and it starts a stopped sandbox.
+    # 'sbx exec' has no TTY, which breaks the interactive CLIs.
     "$SBX_BIN" run "$name"
   elif [[ "$agent" == "t3" ]]; then
-    # Unlike opencode, T3 Code's server isn't launched via a separate 'sbx
-    # exec ... serve' call -- it's the sandbox's own agent process (the
-    # kind:sandbox kit's `sandbox.entrypoint`). 'sbx exec ... true' starts
-    # the sandbox so the port can be published first; 'sbx run' then
-    # attaches to that process's live log, which is where the pairing
-    # token gets printed on startup.
+    # T3 Code is the kit's agent process, started by 'sbx run' below. The
+    # sandbox is started first so the port can be published.
     "$SBX_BIN" exec "$name" true
     publish_port "$name" "$host_port" 3773 "$T3_BASE_PORT"
     check_port_conflict "$name" 3773 "$T3_BASE_PORT"
@@ -666,12 +581,7 @@ run_foreground() {
     "$SBX_BIN" run --name "$name" -e "T3CODE_LOG_LEVEL=${T3_LOG_LEVEL}" \
       | add_local_pairing_url "$PUBLISHED_PORT"
   else
-    # 'sbx ports' doesn't start a stopped sandbox itself -- 'sbx exec' does
-    # ("if the sandbox is stopped, it is started first"). Force it up first.
     "$SBX_BIN" exec "$name" true
-
-    # Publish the port before the blocking exec, since we won't get another
-    # chance once this call takes over the terminal.
     publish_port "$name" "$host_port" 8080 "$BASE_PORT"
     check_port_conflict "$name" 8080 "$BASE_PORT"
 
@@ -683,8 +593,6 @@ run_foreground() {
   fi
 }
 
-# --detached/-d and --verbose/-v may appear anywhere; they're taken out
-# before the other arguments are read.
 DETACHED=0
 VERBOSE=0
 ARGS=()
@@ -696,9 +604,7 @@ for ARG in "$@"; do
   esac
 done
 
-# T3 Code logs at Info by default, which fills the terminal with harmless
-# warnings (e.g. Git fetch without credentials). Error still prints the
-# startup banner with the pairing URL.
+# Info is noisy; Error still prints the startup banner with the pairing URL.
 T3_LOG_LEVEL=Error
 [[ "$VERBOSE" -eq 1 ]] && T3_LOG_LEVEL=Info
 set -- ${ARGS[@]+"${ARGS[@]}"}
@@ -713,10 +619,7 @@ if [[ "$DETACHED" -eq 1 && "$CMD" != "start" && "$CMD" != "create" ]]; then
   exit 1
 fi
 
-# Optional trailing agent argument (t3, claude, codex, copilot, opencode); t3 is the
-# default. Outside `create` it's only needed for disambiguation, see
-# resolve_agent. Not parsed for `login`, whose last argument is a provider
-# (`login myapp claude` means Claude's login in the t3 sandbox).
+# Optional trailing agent. Not for login, whose last argument is a provider.
 AGENT="t3"
 AGENT_EXPLICIT=0
 AGENT_ARG=""
@@ -885,11 +788,8 @@ case "$CMD" in
       exit 1
     fi
 
-    # T3 Code starts the provider CLIs from PATH for each new session, so
-    # updated ones are used right away. T3 Code itself keeps running the old
-    # version until the sandbox restarts. A stopped sandbox is started for
-    # the update (with 'sbx run --detached', which also launches T3 Code)
-    # and stopped again.
+    # New sessions use updated CLIs right away; T3 Code itself only after a
+    # restart.
     STARTED=0
     if ! sandbox_running "$NAME"; then
       echo "'${NAME}' isn't running. Starting it for the update; it stops again after."
@@ -947,9 +847,6 @@ case "$CMD" in
         ;;
     esac
 
-    # A t3 sandbox has several providers, so one must be picked ('all' logs
-    # in to each in turn). Other sandboxes only have their own agent, so any
-    # other choice is redirected to it.
     if [[ "$AGENT" == "t3" ]]; then
       if [[ -z "$PROVIDER" ]]; then
         echo "Pick a provider to log in to in '${NAME}': claude, codex, opencode, copilot or all." >&2
@@ -969,7 +866,7 @@ case "$CMD" in
     fi
     require_tty "login"
 
-    # Sandboxes created before a CLI was added to the image don't have it.
+    # Older sandboxes may lack CLIs added to the image later.
     FAILED=()
     DONE=()
     for P in "${PROVIDERS[@]}"; do
@@ -979,7 +876,6 @@ case "$CMD" in
         [[ "$PROVIDER" != "all" ]] && FAILED+=("$P")
         continue
       fi
-      # With several providers ('all'), each one can be skipped.
       if [[ ${#PROVIDERS[@]} -gt 1 ]]; then
         read -r -p "Log in to ${P}? [Y/n] " ANSWER
         if [[ "$ANSWER" == [nN]* ]]; then
@@ -989,7 +885,7 @@ case "$CMD" in
       fi
       case "$P" in
         claude) LOGIN_CMD=(claude auth login) ;;
-        codex) LOGIN_CMD=(codex login) ;;  # run by codex_login, see there
+        codex) LOGIN_CMD=(codex login) ;;  # run by codex_login
         opencode) LOGIN_CMD=(opencode auth login) ;;
         copilot) LOGIN_CMD=(copilot login) ;;
       esac
@@ -1019,9 +915,7 @@ case "$CMD" in
       exit 0
     fi
 
-    # Keep the header line (if any) plus rows for sandboxes this script
-    # manages. The exact `sbx ls` column layout isn't parsed -- lines are
-    # matched on the name prefix only, so extra columns pass through as-is.
+    # Matches name prefixes only; the columns pass through as-is.
     FILTERED="$(grep -E '(^|[[:space:]])(opencode|claude|codex|copilot|t3)-' <<<"$OUT" || true)"
 
     if [[ -z "${FILTERED//[[:space:]]/}" ]]; then
@@ -1051,8 +945,7 @@ case "$CMD" in
     echo "This stops '${NAME}', removes its container, cleans up any Git"
     echo "worktrees, and deletes its state. It cannot be undone."
     if confirm "Remove sandbox '${NAME}'?"; then
-      # --force because we've already taken the confirmation ourselves;
-      # without it sbx would prompt a second time.
+      # --force: we already asked.
       "$SBX_BIN" rm --force "$NAME"
       echo "Removed '${NAME}'."
     else

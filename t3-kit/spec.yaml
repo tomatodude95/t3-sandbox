@@ -11,10 +11,7 @@ description: >-
   token printed at startup.
 sandbox:
   image: "t3-sandbox-sbx"
-  # Binds 0.0.0.0 (entrypoint.sh default): a loopback-only bind isn't
-  # reachable through `sbx ports --publish`. The Pairing URL t3 serve prints
-  # therefore shows the sandbox's internal address; sandbox.sh adds a
-  # 127.0.0.1 "Local URL" line.
+  # Binds 0.0.0.0: loopback isn't reachable through `sbx ports --publish`.
   entrypoint: ["/usr/local/bin/entrypoint.sh"]
 agentInstructions:
   filename: AGENTS.md

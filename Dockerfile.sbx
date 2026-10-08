@@ -1,18 +1,14 @@
 FROM docker/sandbox-templates:shell-docker
 
-# Base image already provides what a `kind: sandbox` kit image needs
-# (non-root `agent` user at UID 1000 with passwordless sudo, /home/agent) plus
-# Node.js/npm, git, make and python3. Only g++ is missing: node-pty (a t3
-# dependency) has no prebuilt binary for every platform (e.g. linux/arm64) and
-# compiles from source.
+# The base image has the kit's agent user, Node, git and python3. g++ is for
+# node-pty (a t3 dependency), which compiles from source on linux/arm64.
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends g++ \
     && rm -rf /var/lib/apt/lists/*
 
 USER agent
 
-# Providers T3 Code drives, plus T3 Code itself. The Copilot CLI isn't
-# driven by T3 Code yet; it's here for when it is.
+# T3 Code doesn't use the Copilot CLI yet.
 RUN npm install -g \
         t3@latest \
         @anthropic-ai/claude-code \
@@ -30,10 +26,5 @@ USER agent
 
 EXPOSE 3773
 
-# No VOLUME: sbx manages the sandbox's persistence itself (survives
-# stop/restart, wiped on `sbx rm`).
-#
-# No ENTRYPOINT/CMD override: the base image's `tini --` / `bash` must stay
-# PID 1 so the container keeps running while sbx execs into it. sbx starts
-# entrypoint.sh itself as the sandbox's agent process, via `sandbox.entrypoint`
-# in t3-kit/spec.yaml.
+# No VOLUME: sbx persists the sandbox. No ENTRYPOINT: the base image's PID 1
+# keeps the container up; sbx starts entrypoint.sh via t3-kit/spec.yaml.

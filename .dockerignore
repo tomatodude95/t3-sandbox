@@ -1,4 +1,3 @@
-# Both Dockerfiles only COPY entrypoint.sh. Excluding everything else keeps
-# the build context small (e.g. no saved image tarballs).
+# Both Dockerfiles only copy entrypoint.sh.
 *
 !entrypoint.sh
