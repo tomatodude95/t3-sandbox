@@ -509,6 +509,39 @@ publish_port() {
   fi
 }
 
+# Prints "<command> (PID <pid>)" for each process besides sbx listening on
+# host port $1. Empty if there are none or lsof isn't installed.
+port_users() {
+  command -v lsof >/dev/null 2>&1 || return 0
+  lsof -nP +c 0 -iTCP:"$1" -sTCP:LISTEN -Fpc 2>/dev/null | awk '
+    /^p/ { pid = substr($0, 2) }
+    /^c/ {
+      c = substr($0, 2); gsub(/\\x20/, " ", c)
+      if (c != "sbx" && c !~ /^com\.docker/) print c " (PID " pid ")"
+    }' || true
+}
+
+# sbx re-publishes a sandbox's remembered port on start, even if another
+# program took it while the sandbox was stopped (e.g. the T3 Code desktop
+# app, which also picks ports from 3773 up). Connections may then reach
+# that program instead. Warns, and offers to move the sandbox to a free
+# port. Updates PUBLISHED_PORT.
+check_port_conflict() {
+  local name="$1" sandbox_port="$2" base_port="$3" users new
+  users="$(port_users "$PUBLISHED_PORT")"
+  [[ -z "$users" ]] && return 0
+  echo "WARNING: port ${PUBLISHED_PORT} is also used by ${users//$'\n'/, }."
+  [[ -t 0 ]] || return 0
+  new="$(find_free_port "$base_port")"
+  if confirm "Move '${name}' to port ${new}? Clients have to reconnect."; then
+    "$SBX_BIN" ports "$name" --unpublish "${PUBLISHED_PORT}:${sandbox_port}" >/dev/null
+    "$SBX_BIN" ports "$name" --publish "${new}:${sandbox_port}" >/dev/null
+    PUBLISHED_PORT="$new"
+    echo "Moved to ${new}. Connect again with the new port."
+  fi
+  echo
+}
+
 # Passes T3 Code's startup log through unchanged, adding a copyable
 # 127.0.0.1 pairing URL after the "Pairing URL:" line -- t3 serve prints the
 # sandbox's internal address, and only the host knows the published port.
@@ -552,6 +585,7 @@ run_foreground() {
     # token gets printed on startup.
     "$SBX_BIN" exec "$name" true
     publish_port "$name" "$host_port" 3773 "$T3_BASE_PORT"
+    check_port_conflict "$name" 3773 "$T3_BASE_PORT"
 
     echo "T3 Code sandbox '${name}': server published at http://127.0.0.1:${PUBLISHED_PORT}"
     echo "Use the 'Local URL' line below to pair -- the Pairing URL/QR show the"
@@ -568,6 +602,7 @@ run_foreground() {
     # Publish the port before the blocking exec, since we won't get another
     # chance once this call takes over the terminal.
     publish_port "$name" "$host_port" 8080 "$BASE_PORT"
+    check_port_conflict "$name" 8080 "$BASE_PORT"
 
     echo "OpenCode server '${name}': http://127.0.0.1:${PUBLISHED_PORT}"
     echo "Running in the foreground. Ctrl+C to stop."

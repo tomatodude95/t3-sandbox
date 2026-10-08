@@ -36,6 +36,8 @@ several agents share a project name. Commands that take a project name also acce
 
 Without `[port]`, a port that sbx restored from an earlier run is reused. Otherwise the first
 free port from the base port up is used.
+If another program listens on that port too (e.g. the T3 Code desktop app, which also picks ports
+from 3773 up), `start` warns and offers to move the sandbox to a free port.
 
 On `create`, `start` and `reload` the script checks for newer versions of the sandbox's CLIs
 (`t3`, `claude`, `codex`, `opencode`, `copilot`) and asks before updating them all. It skips the
