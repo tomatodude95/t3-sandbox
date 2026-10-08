@@ -28,7 +28,7 @@ several agents share a project name. Commands that take a project name also acce
 | `create <project> <workspace> [port] [agent]` | Create and start a sandbox for `<workspace>` |
 | `start <project> [port]` | Start an existing sandbox |
 | `reload <project> [port] [agent]` | Stop (asks first), refresh the skills store, start again |
-| `login <project> [provider]` | Log in to `claude`, `codex`, `opencode` or `copilot` inside the sandbox; `all` logs in to each of the sandbox's providers in turn. Required for `t3` sandboxes; other sandboxes default to their own agent. With several agents per project name, pass the full sandbox name |
+| `login <project> [provider]` | Log in to `claude`, `codex`, `opencode` or `copilot` inside the sandbox; `all` logs in to each of the sandbox's providers in turn, asking before each. Required for `t3` sandboxes; other sandboxes default to their own agent. With several agents per project name, pass the full sandbox name |
 | `upgrade-providers <project>` | `t3` sandboxes only: update T3 Code and the provider CLIs in place. New sessions use the new CLIs; T3 Code itself needs a restart. A stopped sandbox is started for the update and stopped again |
 | `ls [all]` | List sandboxes managed by this script (`all`: raw `sbx ls`) |
 | `rm <project> [agent]` | Remove a sandbox (asks first). Aliases: `remove`, `delete` |

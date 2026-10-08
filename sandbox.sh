@@ -812,6 +812,14 @@ case "$CMD" in
         [[ "$PROVIDER" != "all" ]] && FAILED+=("$P")
         continue
       fi
+      # With several providers ('all'), each one can be skipped.
+      if [[ ${#PROVIDERS[@]} -gt 1 ]]; then
+        read -r -p "Log in to ${P}? [Y/n] " ANSWER
+        if [[ "$ANSWER" == [nN]* ]]; then
+          echo
+          continue
+        fi
+      fi
       case "$P" in
         claude) LOGIN_CMD=(claude auth login) ;;
         codex) LOGIN_CMD=(codex login) ;;  # run by codex_login, see there

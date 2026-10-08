@@ -13,7 +13,8 @@ sandbox's `/home/agent` until the sandbox is removed.
 Run them in one of these places:
 
 - **sandbox.sh:** `./sandbox.sh login <project> <provider>` runs them for you. `all` logs in to
-  Claude Code, Codex, OpenCode and the Copilot CLI in turn.
+  Claude Code, Codex, OpenCode and the Copilot CLI in turn and asks before each, so you can skip
+  any.
 - **T3 Code app:** open a terminal in the app once it's connected, and run the commands there.
 - **Host, sbx:** `sbx exec -it <sandbox> claude auth login`
 - **Host, plain Docker:** `docker exec -it <container> claude auth login`
