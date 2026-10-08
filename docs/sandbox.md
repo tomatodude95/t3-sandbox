@@ -39,6 +39,9 @@ several agents share a project name. Commands that take a project name also acce
 returns. `create` prints a `Local URL` for pairing; pairings survive restarts, so
 `start` doesn't need one. Stop the sandbox with `stop`.
 
+T3 Code's server logs only errors, plus its startup banner with the pairing URL.
+`--verbose` (or `-v`) shows its full log.
+
 Without `[port]`, a port that sbx restored from an earlier run is reused. Otherwise the first
 free port from the base port up is used.
 If another program listens on that port too (e.g. the T3 Code desktop app, which also picks ports

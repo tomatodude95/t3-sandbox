@@ -129,6 +129,7 @@ Commands:
 
 Options:
   --detached                             t3 start/create in the background (-d)
+  --verbose                              Show T3 Code's full server log (-v)
 
 Agents (default t3; other commands only need one to tell sandboxes apart):
   t3        T3 Code server, port from ${T3_BASE_PORT}
@@ -603,7 +604,7 @@ run_detached() {
     # Not via 'sbx run --detached': the agent process it starts stops once
     # that call returns. setsid/nohup keep the server running after this
     # 'sbx exec' returns (which also starts a stopped sandbox).
-    "$SBX_BIN" exec "$name" sh -c \
+    "$SBX_BIN" exec -e "T3CODE_LOG_LEVEL=${T3_LOG_LEVEL}" "$name" sh -c \
       'setsid nohup /usr/local/bin/entrypoint.sh >/tmp/t3-serve.log 2>&1 </dev/null &'
   fi
   publish_port "$name" "$host_port" 3773 "$T3_BASE_PORT"
@@ -662,7 +663,8 @@ run_foreground() {
     echo "Running in the foreground. Ctrl+C or 'exit' to stop."
     echo
 
-    "$SBX_BIN" run --name "$name" | add_local_pairing_url "$PUBLISHED_PORT"
+    "$SBX_BIN" run --name "$name" -e "T3CODE_LOG_LEVEL=${T3_LOG_LEVEL}" \
+      | add_local_pairing_url "$PUBLISHED_PORT"
   else
     # 'sbx ports' doesn't start a stopped sandbox itself -- 'sbx exec' does
     # ("if the sandbox is stopped, it is started first"). Force it up first.
@@ -681,13 +683,24 @@ run_foreground() {
   fi
 }
 
-# --detached/-d may appear anywhere; it's taken out before the other
-# arguments are read.
+# --detached/-d and --verbose/-v may appear anywhere; they're taken out
+# before the other arguments are read.
 DETACHED=0
+VERBOSE=0
 ARGS=()
 for ARG in "$@"; do
-  case "$ARG" in --detached|-d) DETACHED=1 ;; *) ARGS+=("$ARG") ;; esac
+  case "$ARG" in
+    --detached|-d) DETACHED=1 ;;
+    --verbose|-v) VERBOSE=1 ;;
+    *) ARGS+=("$ARG") ;;
+  esac
 done
+
+# T3 Code logs at Info by default, which fills the terminal with harmless
+# warnings (e.g. Git fetch without credentials). Error still prints the
+# startup banner with the pairing URL.
+T3_LOG_LEVEL=Error
+[[ "$VERBOSE" -eq 1 ]] && T3_LOG_LEVEL=Info
 set -- ${ARGS[@]+"${ARGS[@]}"}
 
 [[ $# -lt 1 ]] && usage
