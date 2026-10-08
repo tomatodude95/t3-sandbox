@@ -200,11 +200,18 @@ check_port() {
 # explicitly. Errors out if more than one variant exists and none was chosen.
 # Also accepts the full sandbox name (e.g. 't3-foo' for 'foo'): if that
 # exact sandbox exists, PROJECT_NAME is stripped to 'foo' and AGENT is set
-# from the prefix.
+# from the prefix. A trailing agent argument that contradicts the prefix is
+# an error, unless it names a sandbox of its own ('start claude-x t3' with
+# 't3-claude-x' existing).
 resolve_agent() {
   local project="$1" agent
   for agent in claude codex copilot opencode t3; do
     if [[ "$project" == "${agent}-"* ]] && sandbox_exists "$project"; then
+      if [[ -n "$AGENT_ARG" && "$AGENT_ARG" != "$agent" ]]; then
+        sandbox_exists "${AGENT_ARG}-${project}" && break
+        echo "ERROR: '${project}' is a ${agent} sandbox. Drop '${AGENT_ARG}' or use '${AGENT_ARG}-${project#"${agent}-"}'." >&2
+        exit 1
+      fi
       PROJECT_NAME="${project#"${agent}-"}"
       AGENT="$agent"
       AGENT_EXPLICIT=1
@@ -582,12 +589,14 @@ CMD="$1"; shift
 # (`login myapp claude` means Claude's login in the t3 sandbox).
 AGENT="t3"
 AGENT_EXPLICIT=0
+AGENT_ARG=""
 ARGS=("$@")
 if [[ "$CMD" != "login" && ${#ARGS[@]} -gt 0 ]]; then
   LAST="${ARGS[$((${#ARGS[@]} - 1))]}"
   case "$LAST" in t3|claude|codex|copilot|opencode) IS_AGENT=1 ;; *) IS_AGENT=0 ;; esac
   if [[ "$IS_AGENT" -eq 1 ]]; then
     AGENT="$LAST"
+    AGENT_ARG="$LAST"
     AGENT_EXPLICIT=1
     unset 'ARGS[$((${#ARGS[@]} - 1))]'
   fi
