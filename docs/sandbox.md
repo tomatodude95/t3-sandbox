@@ -31,8 +31,13 @@ several agents share a project name. Commands that take a project name also acce
 | `login <project> [provider]` | Log in to `claude`, `codex`, `opencode` or `copilot` inside the sandbox; `all` logs in to each of the sandbox's providers in turn, asking before each. Required for `t3` sandboxes; other sandboxes default to their own agent. With several agents per project name, pass the full sandbox name |
 | `upgrade-providers <project>` | `t3` sandboxes only: update T3 Code and the provider CLIs in place. New sessions use the new CLIs; T3 Code itself needs a restart. A stopped sandbox is started for the update and stopped again |
 | `ls [all]` | List sandboxes managed by this script (`all`: raw `sbx ls`) |
+| `stop <project>` | Stop a running sandbox, e.g. one started with `--detached` |
 | `rm <project> [agent]` | Remove a sandbox (asks first). Aliases: `remove`, `delete` |
 | `help` | Show the short help (also `-h`, `--help`) |
+
+`--detached` (or `-d`, anywhere on the line) runs `start` and `create` for `t3` in the background and
+returns. `create` prints a `Local URL` for pairing; pairings survive restarts, so
+`start` doesn't need one. Stop the sandbox with `stop`.
 
 Without `[port]`, a port that sbx restored from an earlier run is reused. Otherwise the first
 free port from the base port up is used.

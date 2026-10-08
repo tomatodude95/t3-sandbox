@@ -124,7 +124,11 @@ Commands:
   upgrade-providers <project>            t3 only; T3 Code itself needs a restart
   reload <project> [port]                Restart to pick up refreshed skills
   ls [all]                               List sandboxes ('all': all of sbx)
+  stop <project>                         Stop a running sandbox
   rm <project>                           Remove a sandbox (asks first)
+
+Options:
+  --detached                             t3 start/create in the background (-d)
 
 Agents (default t3; other commands only need one to tell sandboxes apart):
   t3        T3 Code server, port from ${T3_BASE_PORT}
@@ -142,6 +146,7 @@ Examples:
   $SCRIPT_NAME create myapp ~/code/myapp
   $SCRIPT_NAME create api ~/code/api claude
   $SCRIPT_NAME login myapp codex
+  $SCRIPT_NAME start myapp -d
 
 Settings: ~/.config/t3-sandbox/config.conf. Details: docs/sandbox.md
 EOF
@@ -186,6 +191,15 @@ find_free_port() {
     port=$((port + 1))
   done
   echo "$port"
+}
+
+# --detached is t3 only: interactive agents have no server to leave running,
+# and sbx stopped detached opencode sandboxes after a short while.
+check_detached() {
+  if [[ "$DETACHED" -eq 1 && "$1" != "t3" ]]; then
+    echo "ERROR: --detached only works for t3 sandboxes." >&2
+    exit 1
+  fi
 }
 
 # Rejects a host_port that isn't a number, e.g. a mistyped agent name.
@@ -557,10 +571,58 @@ add_local_pairing_url() {
     }'
 }
 
+# True if the sandbox is running and T3 Code's server is up.
+t3_running() {
+  sandbox_running "$1" && "$SBX_BIN" exec "$1" pgrep -f "t3 serve" >/dev/null 2>&1
+}
+
+# Mints a pairing token with 't3 pair', retrying while the server starts,
+# and prints it as a Local URL for the published port.
+print_pairing_url() {
+  local name="$1" token=""
+  for _ in $(seq 1 30); do
+    token="$("$SBX_BIN" exec "$name" t3 pair 2>/dev/null \
+      | grep -o '#token=[^[:space:][:cntrl:]]*' | head -n 1 || true)"
+    [[ -n "$token" ]] && break
+    sleep 1
+  done
+  if [[ -z "$token" ]]; then
+    echo "WARNING: no pairing token yet; get one with 'sbx exec ${name} t3 pair'." >&2
+    return 0
+  fi
+  echo "Local URL: http://127.0.0.1:${PUBLISHED_PORT}/pair${token} (valid 5 minutes)"
+}
+
+# Starts T3 Code's server in the background and returns. With $3 = 1
+# (create), also prints a Local URL for pairing.
+run_detached() {
+  local name="$1" host_port="$2" pair="$3"
+
+  maybe_update_providers "$name"
+  if ! t3_running "$name"; then
+    # Not via 'sbx run --detached': the agent process it starts stops once
+    # that call returns. setsid/nohup keep the server running after this
+    # 'sbx exec' returns (which also starts a stopped sandbox).
+    "$SBX_BIN" exec "$name" sh -c \
+      'setsid nohup /usr/local/bin/entrypoint.sh >/tmp/t3-serve.log 2>&1 </dev/null &'
+  fi
+  publish_port "$name" "$host_port" 3773 "$T3_BASE_PORT"
+  check_port_conflict "$name" 3773 "$T3_BASE_PORT"
+
+  echo "T3 Code '${name}' runs in the background: http://127.0.0.1:${PUBLISHED_PORT}"
+  [[ "$pair" == "1" ]] && print_pairing_url "$name"
+  echo "Stop it with: $SCRIPT_NAME stop ${PROJECT_NAME}"
+}
+
 run_foreground() {
   local name="$1"
   local host_port="$2"
   local agent="$3"
+
+  if [[ "$agent" == "t3" ]] && t3_running "$name"; then
+    echo "ERROR: '${name}' is already running in the background. Stop it first: $SCRIPT_NAME stop ${PROJECT_NAME}" >&2
+    exit 1
+  fi
 
   # Stop the sandbox when this command ends, Ctrl+C included. sbx doesn't
   # reliably do that itself once the sandbox was already running when
@@ -619,11 +681,24 @@ run_foreground() {
   fi
 }
 
+# --detached/-d may appear anywhere; it's taken out before the other
+# arguments are read.
+DETACHED=0
+ARGS=()
+for ARG in "$@"; do
+  case "$ARG" in --detached|-d) DETACHED=1 ;; *) ARGS+=("$ARG") ;; esac
+done
+set -- ${ARGS[@]+"${ARGS[@]}"}
+
 [[ $# -lt 1 ]] && usage
 case "$1" in help|-h|--help) usage 0 ;; esac
 require_cmd "$SBX_BIN" SBX_BIN
 
 CMD="$1"; shift
+if [[ "$DETACHED" -eq 1 && "$CMD" != "start" && "$CMD" != "create" ]]; then
+  echo "ERROR: --detached only works with start and create." >&2
+  exit 1
+fi
 
 # Optional trailing agent argument (t3, claude, codex, copilot, opencode); t3 is the
 # default. Outside `create` it's only needed for disambiguation, see
@@ -651,6 +726,7 @@ case "$CMD" in
     PROJECT_NAME="$1"
     WORKSPACE="$2"
     NAME="${AGENT}-${PROJECT_NAME}"
+    check_detached "$AGENT"
 
     if [[ "$AGENT" == "claude" || "$AGENT" == "codex" || "$AGENT" == "copilot" ]]; then
       HOST_PORT=""
@@ -693,7 +769,11 @@ case "$CMD" in
       "$SBX_BIN" policy allow network --sandbox "$NAME" "$NETWORK_ALLOW"
     fi
     maybe_reload_skills_store
-    run_foreground "$NAME" "$HOST_PORT" "$AGENT"
+    if [[ "$DETACHED" -eq 1 ]]; then
+      run_detached "$NAME" "$HOST_PORT" 1
+    else
+      run_foreground "$NAME" "$HOST_PORT" "$AGENT"
+    fi
     ;;
 
   start)
@@ -701,6 +781,7 @@ case "$CMD" in
     PROJECT_NAME="$1"
     resolve_agent "$PROJECT_NAME"
     NAME="${AGENT}-${PROJECT_NAME}"
+    check_detached "$AGENT"
 
     if [[ "$AGENT" == "claude" || "$AGENT" == "codex" || "$AGENT" == "copilot" ]]; then
       HOST_PORT=""
@@ -717,7 +798,29 @@ case "$CMD" in
     fi
 
     maybe_reload_skills_store
-    run_foreground "$NAME" "$HOST_PORT" "$AGENT"
+    if [[ "$DETACHED" -eq 1 ]]; then
+      run_detached "$NAME" "$HOST_PORT" 0
+    else
+      run_foreground "$NAME" "$HOST_PORT" "$AGENT"
+    fi
+    ;;
+
+  stop)
+    [[ $# -lt 1 ]] && usage
+    PROJECT_NAME="$1"
+    resolve_agent "$PROJECT_NAME"
+    NAME="${AGENT}-${PROJECT_NAME}"
+
+    if ! sandbox_exists "$NAME"; then
+      echo "ERROR: sandbox '${NAME}' does not exist. Run '$SCRIPT_NAME ls' to see what does." >&2
+      exit 1
+    fi
+    if ! sandbox_running "$NAME"; then
+      echo "'${NAME}' isn't running."
+      exit 0
+    fi
+    "$SBX_BIN" stop "$NAME" >/dev/null
+    echo "Stopped '${NAME}'."
     ;;
 
   reload)

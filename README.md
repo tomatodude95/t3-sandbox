@@ -43,6 +43,7 @@ If you get "permission denied", run `chmod +x sandbox.sh` once.
 ```bash
 ./sandbox.sh create myapp ~/code/myapp t3        # new sandbox; t3 is the default and can be left out
 ./sandbox.sh start myapp                         # start it again later
+./sandbox.sh start myapp -d                      # in the background; stop with ./sandbox.sh stop myapp
 ./sandbox.sh login myapp claude                  # log in to a provider (claude, codex, opencode or all)
 ./sandbox.sh upgrade-providers myapp             # update the provider CLIs while T3 Code runs
 ./sandbox.sh reload myapp                        # restart to pick up refreshed skills
