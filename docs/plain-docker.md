@@ -11,8 +11,8 @@ docker run -d --name t3 -p 127.0.0.1:3773:3773 -v ~/code/myapp:/workspace t3-san
 ```
 
 - `/workspace` is your project. On first boot T3 Code creates a project for it.
-- `-p 127.0.0.1:3773:3773` keeps the server local. Plain `-p 3773:3773` exposes it to your
-  network (see [security.md](security.md)).
+- `-p 127.0.0.1:3773:3773` keeps the server local. Without `-p`, no port is published; `-p`
+  without an IP (`-p 3773:3773`) binds all interfaces (see [security.md](security.md)).
 - `-e T3_HOST=… -e T3_PORT=…` change the bind address/port inside the container.
 
 ## Provider login
